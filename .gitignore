@@ -7,3 +7,4 @@ playwright-report
 test-results
 *.log
 *.mp4
+*.tsbuildinfo

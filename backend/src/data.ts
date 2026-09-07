@@ -7,11 +7,11 @@ export const users=[
  {id:"u-recycler",name:"GreenCycle Pune",email:"recycler@kabadi.local",phone:"9876543211",role:"RECYCLER"},
  {id:"u-admin",name:"Asha Admin",email:"admin@kabadi.local",phone:"9876543212",role:"ADMIN"}
 ];
-export let lots:any[]=[]; export let quotes:any[]=[]; export let payments:any[]=[]; export let handovers:any[]=[]; export let anomalies:any[]=[]; export let audits:any[]=[]; export const synced=new Set<string>();
-export async function resetData(){lots=Array.from({length:52},(_,i)=>{const material=materials[i%materials.length].name;const weight=+(2+(i%16)*1.5).toFixed(1);const p=estimatePrice(material,weight);return {id:`lot-${i+1}`,lotId:`KBD-2026-${String(i+101).padStart(6,"0")}`,collectorId:"u-collector",materialCategory:material,approxWeight:weight,condition:"USED",location:"Pune",estimatedValue:p.average*weight,priceRange:{low:p.totalLow,high:p.totalHigh},status:["CREATED","QUOTED","ACCEPTED","PAID","RECYCLED"][i%5],recyclerId:i%3?"r1":null,createdAt:new Date(Date.now()-i*86400000).toISOString(),seededDemoData:true};}); quotes=[];payments=lots.filter(x=>x.status==="PAID"||x.status==="RECYCLED").map((x,i)=>({id:`pay-${i}`,lotId:x.lotId,amount:Math.round(x.estimatedValue),method:i%2?"UPI":"CASH",status:"PAID",paidAt:x.createdAt,seededDemoData:true}));anomalies=Array.from({length:10},(_,i)=>({id:`a${i}`,type:i%2?"PRICE_DEVIATION":"WEIGHT_DISCREPANCY",severity:i<4?"HIGH":"MEDIUM",lotId:lots[i].lotId,status:"OPEN",seededDemoData:true}));audits=[];handovers=[];}
+export let lots:any[]=[]; export let quotes:any[]=[]; export let payments:any[]=[]; export let handovers:any[]=[]; export let anomalies:any[]=[]; export let audits:any[]=[]; export let notifications:any[]=[]; export const synced=new Set<string>();
+export async function resetData(){lots=Array.from({length:52},(_,i)=>{const material=materials[i%materials.length].name;const weight=+(2+(i%16)*1.5).toFixed(1);const p=estimatePrice(material,weight);return {id:`lot-${i+1}`,lotId:`KBD-2026-${String(i+101).padStart(6,"0")}`,collectorId:"u-collector",materialCategory:material,approxWeight:weight,condition:"USED",location:"Pune",estimatedValue:p.average*weight,priceRange:{low:p.totalLow,high:p.totalHigh},status:["CREATED","QUOTED","ACCEPTED","PAID","RECYCLED"][i%5],recyclerId:i%3?"r1":null,createdAt:new Date(Date.now()-i*86400000).toISOString(),seededDemoData:true};}); quotes=[];payments=lots.filter(x=>x.status==="PAID"||x.status==="RECYCLED").map((x,i)=>({id:`pay-${i}`,lotId:x.lotId,amount:Math.round(x.estimatedValue),method:i%2?"UPI":"CASH",status:"PAID",paidAt:x.createdAt,seededDemoData:true}));anomalies=Array.from({length:10},(_,i)=>({id:`a${i}`,type:i%2?"PRICE_DEVIATION":"WEIGHT_DISCREPANCY",severity:i<4?"HIGH":"MEDIUM",lotId:lots[i].lotId,status:"OPEN",seededDemoData:true}));audits=[];handovers=[];notifications=[];}
 export const passwordHash=await bcrypt.hash("Demo123!",10); await resetData();
 
-export function snapshotData(){return {lots,quotes,payments,handovers,anomalies,audits,synced:[...synced]};}
+export function snapshotData(){return {lots,quotes,payments,handovers,anomalies,audits,notifications,synced:[...synced]};}
 export function hydrateData(state:any){
   if(!state||typeof state!=="object")return;
   lots=Array.isArray(state.lots)?state.lots:lots;
@@ -20,5 +20,6 @@ export function hydrateData(state:any){
   handovers=Array.isArray(state.handovers)?state.handovers:handovers;
   anomalies=Array.isArray(state.anomalies)?state.anomalies:anomalies;
   audits=Array.isArray(state.audits)?state.audits:audits;
+  notifications=Array.isArray(state.notifications)?state.notifications:notifications;
   synced.clear(); for(const id of state.synced||[])synced.add(String(id));
 }

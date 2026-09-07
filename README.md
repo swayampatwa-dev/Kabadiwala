@@ -37,8 +37,8 @@ Demo OTP is `123456`. This is visibly marked as prototype authentication.
 
 ## Features
 
-- Collector: AI demo scan, fair price explanations, guided lot creation, offline IndexedDB persistence, sync queue, recycler matching, digital passport, earnings and multilingual safety.
-- Recycler: incoming lots, real quote creation, pickup pooling insight, OTP handover, weight discrepancy flags and local payment recording.
+- Collector: on-device TensorFlow.js/MobileNet assisted scan, consent-based live GPS with OpenStreetMap, fair pricing, guided lot creation, offline IndexedDB sync, live notification inbox, recycler matching, digital passport, earnings and multilingual safety.
+- Recycler: incoming lots, real quotes, capacity-aware nearest-neighbour pickup route optimization, OTP handover, weight discrepancy flags, notification events and local payment recording.
 - Admin: formalization dashboard, recycler review, anomalies, dataset health, audit log, business metrics and network flywheel.
 - Platform: role-checked JWT API, structured errors, validation, rate limiting, idempotent client operations, status machine, PWA shell and CSV-ready structured endpoints.
 
@@ -56,6 +56,6 @@ Classification and pricing are deterministic local services. Filenames containin
 
 ## Tests and known limitations
 
-The test suite covers pricing, matching, price anomalies, weight discrepancies, authenticated lot creation and traceability. The current prototype uses a deterministic process-local repository while exposing a MongoDB-ready connection and Docker service; persisted Mongoose repositories, real authorization registry verification, object storage, maps, real payments, field-evaluated ML, production OTP and Playwright browser automation are production upgrades. Seed state resets when the API restarts.
+The test suite covers pricing, matching, price anomalies, weight discrepancies, authenticated lot creation, notifications, capacity-aware pickup pooling and traceability. MongoDB is primary when `MONGODB_URI` is configured; PostgreSQL remains a deployment-safe fallback. Real authorization registry verification, object storage, payments, custom field-trained e-waste ML, production OTP, background Web Push and Playwright browser automation remain production upgrades.
 
 See [architecture](./ARCHITECTURE.md), [API](./API.md), [database](./DATABASE.md), [AI](./AI.md), [offline design](./OFFLINE.md), [business model](./BUSINESS_MODEL.md), and [demo script](./DEMO.md).

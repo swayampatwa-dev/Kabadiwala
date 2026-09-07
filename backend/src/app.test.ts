@@ -41,6 +41,8 @@ describe("complete KABADI+ workflow",()=>{
     expect(trace.body.data).toMatchObject({material:"PCB",handover:true,payment:true,status:"PAID"});
     const anomalies=await authorized("get","/api/anomalies",admin);
     expect(anomalies.body.data.some((x:any)=>x.lotId===lotId&&x.type==="WEIGHT_DISCREPANCY")).toBe(true);
+    const notifications=await authorized("get","/api/notifications",collector);
+    expect(notifications.body.data.map((x:any)=>x.type)).toEqual(expect.arrayContaining(["QUOTE","WARNING","PAYMENT"]));
   });
 
   it("syncs offline mutations once and rejects duplicate execution",async()=>{
@@ -59,5 +61,13 @@ describe("complete KABADI+ workflow",()=>{
     const lot=(await authorized("post","/api/lots",collector).send({materialCategory:"Battery",approxWeight:2,condition:"USED",location:"Pune"})).body.data;
     const invalid=await authorized("patch",`/api/lots/${lot.lotId}`,collector).send({status:"RECYCLED"});
     expect(invalid.status).toBe(409);
+  });
+
+  it("optimizes capacity-aware pooled pickup routes",async()=>{
+    const recycler=await login("recycler@kabadi.local");
+    const plan=await authorized("post","/api/pickups/optimize",recycler).send({latitude:18.5204,longitude:73.8567,capacityKg:80,radiusKm:15});
+    expect(plan.status).toBe(200);
+    expect(plan.body.data.routes.length).toBeGreaterThan(0);
+    expect(plan.body.data.routes.every((r:any)=>r.totalWeightKg<=80&&r.distanceKm>0)).toBe(true);
   });
 });

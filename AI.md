@@ -1,5 +1,5 @@
 # AI architecture
 
-The web client calls capability endpoints rather than a model directly. The local provider supplies material classification and fair-price estimation; matching, anomaly, discrepancy and safety decisions are pure services.
+The scan flow lazy-loads TensorFlow.js MobileNet and runs real inference on the selected image inside the user's browser. Top visual labels are mapped to supported e-waste classes and combined with deterministic CHAKRASETU rules; matching, anomaly, discrepancy and safety decisions remain pure services.
 
-The demo classifier is deterministic from supplied metadata. It is visibly labelled **AI DEMO MODEL** and does not claim validated accuracy. A production provider can implement the same contracts with an on-device TFLite/ONNX classifier, monitored price forecasting and a versioned evaluation dataset.
+The UI exposes model evidence and labels results as advisory. A domain-trained e-waste dataset and field evaluation are still required before claiming accuracy; the backend retains a deterministic fallback when the on-device model cannot load.

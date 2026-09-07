@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   BarChart3,
   BatteryCharging,
+  Bell,
   BookOpen,
   Box,
   Camera,
@@ -29,6 +30,7 @@ import {
   LogOut,
   MapPin,
   MapPinned,
+  Navigation,
   Menu,
   Mic2,
   PackageCheck,
@@ -59,6 +61,7 @@ import {
 } from "recharts";
 import { api, session, type User } from "./api";
 import { isDemoOffline, offlineDB, queue, syncNow } from "./offline";
+import { classifyImage } from "./vision";
 const money = (n: number) =>
   new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -196,6 +199,25 @@ const menus: any = {
     [FileCheck2, "Audit log", "/admin/audit"],
   ],
 };
+function NotificationCenter({user}:{user:User}){
+  const [open,setOpen]=useState(false);
+  const client=useQueryClient();
+  const q=useQuery({queryKey:["notifications",user.id],queryFn:()=>api<any[]>("/notifications"),refetchInterval:10000});
+  const unread=q.data?.filter(n=>!n.read).length||0;
+  const enable=async()=>{
+    if(!("Notification" in window))return;
+    const permission=await Notification.requestPermission();
+    if(permission==="granted")new Notification("CHAKRASETU alerts enabled",{body:"Quotes, pickup, handover and payment updates will appear here."});
+  };
+  const mark=async(n:any)=>{if(!n.read)await api(`/notifications/${n.id}/read`,{method:"PATCH"});client.invalidateQueries({queryKey:["notifications",user.id]});if(n.link)location.href=n.link;};
+  return <div className="notification-wrap">
+    <button className="iconbtn" onClick={()=>setOpen(!open)} aria-label={`${unread} unread notifications`}><Bell size={17}/>{unread>0&&<span className="notification-count">{unread}</span>}</button>
+    {open&&<div className="notification-panel">
+      <div className="row"><b>Live updates</b><button className="btn secondary compact" onClick={enable}>Enable device alerts</button></div>
+      {!q.data?.length?<p className="muted">No updates yet. New quotes and payments will appear automatically.</p>:q.data.map(n=><button key={n.id} className={`notification-item ${n.read?"":"unread"}`} onClick={()=>mark(n)}><b>{n.title}</b><span>{n.message}</span><small>{date(n.createdAt)}</small></button>)}
+    </div>}
+  </div>;
+}
 function Layout({ user, onLogout }: { user: User; onLogout: () => void }) {
   const { i18n } = useTranslation();
   const [offline, setOffline] = useState(isDemoOffline());
@@ -256,6 +278,7 @@ function Layout({ user, onLogout }: { user: User; onLogout: () => void }) {
               <UploadCloud size={17} />
             </button>
           )}
+          <NotificationCenter user={user}/>
           <button className="iconbtn" onClick={onLogout}>
             <LogOut size={17} />
           </button>
@@ -491,15 +514,17 @@ function CollectorDashboard({ user }: { user: User }) {
 }
 function Scan({ toast }: { toast: (s: string) => void }) {
   const [file, setFile] = useState<File | null>(null),
-    [result, setResult] = useState<any>(null);
+    [result, setResult] = useState<any>(null),[analyzing,setAnalyzing]=useState(false),[vision,setVision]=useState<any>(null);
   const nav = useNavigate();
   const analyze = async () => {
-    const r = await api<any>("/ai/classify", {
-      method: "POST",
-      body: JSON.stringify({ fileName: file?.name || "pcb-demo.jpg" }),
-    });
-    setResult(r);
-    toast("AI analysis completed");
+    setAnalyzing(true);
+    try{
+      const ml=file?await classifyImage(file).catch(()=>null):null;
+      setVision(ml);
+      const r = await api<any>("/ai/classify", {method:"POST",body:JSON.stringify({fileName:file?.name||"pcb-demo.jpg",visionLabel:ml?.labels?.[0]?.label,suggestedMaterial:ml?.suggestedMaterial})});
+      setResult({...r,model:ml?"TensorFlow.js MobileNet + CHAKRASETU material rules":"CHAKRASETU deterministic fallback"});
+      toast(ml?"On-device ML analysis completed":"AI fallback analysis completed");
+    }finally{setAnalyzing(false);}
   };
   return (
     <>
@@ -530,7 +555,7 @@ function Scan({ toast }: { toast: (s: string) => void }) {
             style={{ width: "100%", marginTop: 14 }}
             onClick={analyze}
           >
-            Analyze material
+            {analyzing?"Loading on-device ML model…":"Analyze material"}
           </button>
         </section>
         <section className="card panel6">
@@ -539,7 +564,7 @@ function Scan({ toast }: { toast: (s: string) => void }) {
               <Activity size={42} color="#82948a" />
               <h3>AI result will appear here</h3>
               <p className="muted">
-                Classification is deterministic from the file name in demo mode.
+                A real MobileNet model runs privately on this device; CHAKRASETU maps its visual labels to e-waste classes.
               </p>
             </div>
           ) : (
@@ -574,9 +599,9 @@ function Scan({ toast }: { toast: (s: string) => void }) {
                 </span>
               </div>
               <p className="muted" style={{ fontSize: 12 }}>
-                Experimental/demo classification. Verify before commercial
-                decisions.
+                {result.model}. Experimental advisory classification; verify before commercial decisions.
               </p>
+              {vision?.labels?.length>0&&<details><summary>Model evidence</summary><p className="muted">{vision.labels.slice(0,3).map((x:any)=>`${x.label} (${x.confidence}%)`).join(" · ")}</p></details>}
               <div className="row">
                 <button
                   className="btn"
@@ -1006,17 +1031,27 @@ function LotDetail({ toast }: { toast: (s: string) => void }) {
   );
 }
 function NetworkMap() {
+  const [position,setPosition]=useState<{latitude:number;longitude:number;accuracy:number}|null>(null);
+  const [gpsError,setGpsError]=useState("");
+  const locate=()=>navigator.geolocation?navigator.geolocation.getCurrentPosition(
+    p=>{setPosition({latitude:p.coords.latitude,longitude:p.coords.longitude,accuracy:p.coords.accuracy});setGpsError("");},
+    e=>setGpsError(e.message),{enableHighAccuracy:true,timeout:12000,maximumAge:60000}
+  ):setGpsError("GPS is not supported on this device");
+  const lat=position?.latitude||18.5204,lon=position?.longitude||73.8567;
+  const bbox=`${lon-.08}%2C${lat-.055}%2C${lon+.08}%2C${lat+.055}`;
   return (
     <section className="map-card" aria-label="Nearby recycler map">
       <iframe
         title="Nearby verified recyclers in Pune"
-        src="https://www.openstreetmap.org/export/embed.html?bbox=73.77%2C18.47%2C73.98%2C18.61&layer=mapnik&marker=18.5204%2C73.8567"
+        src={`https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat}%2C${lon}`}
         loading="lazy"
       />
       <div className="map-overlay">
         <span className="live-pill"><i /> 6 partners online</span>
         <b>Nearby pickup network</b>
-        <small>Approximate area only · exact address stays private</small>
+        <small>{position?`GPS active · accuracy ±${Math.round(position.accuracy)} m`:"Approximate area only · exact address stays private"}</small>
+        <button className="btn compact" onClick={locate}><Navigation size={15}/> Use my live GPS</button>
+        {gpsError&&<small>{gpsError}</small>}
       </div>
       <a className="map-credit" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>
     </section>
@@ -1305,6 +1340,12 @@ function Operations({ toast }: { toast: (s: string) => void }) {
   });
   const [weight, setWeight] = useState(9.8);
   const [otp, setOtp] = useState("123456");
+  const [capacity,setCapacity]=useState(250);
+  const [plan,setPlan]=useState<any>(null);
+  const optimize=()=>{
+    const run=(latitude=18.5204,longitude=73.8567)=>api<any>("/pickups/optimize",{method:"POST",body:JSON.stringify({latitude,longitude,capacityKg:capacity,radiusKm:15})}).then(setPlan).catch(e=>toast(e.message));
+    if(navigator.geolocation)navigator.geolocation.getCurrentPosition(p=>run(p.coords.latitude,p.coords.longitude),()=>run());else run();
+  };
   const handover = async (l: any) => {
     try {
       await api("/handover", {
@@ -1335,6 +1376,10 @@ function Operations({ toast }: { toast: (s: string) => void }) {
   return (
     <>
       <Head eyebrow="Pickup · Handover · Payment" title="Operations desk" />
+      <div className="card" style={{marginBottom:16}}>
+        <div className="row"><div><h2 style={{margin:"0 0 5px"}}>Smart pickup pooling</h2><span className="muted">Nearest-neighbour routing · vehicle capacity · 15 km service radius</span></div><div className="row"><label>Capacity <input style={{width:90,padding:10}} type="number" value={capacity} onChange={e=>setCapacity(+e.target.value)}/> kg</label><button className="btn" onClick={optimize}><Navigation size={17}/> Optimize route</button></div></div>
+        {plan?.routes?.map((r:any)=><div className="pickup-route" key={r.routeId}><div className="row"><b>{r.routeId} · {r.stops.length} stops</b><span className="badge">{r.estimatedSavingPercent}% estimated saving</span></div><p>{r.totalWeightKg} kg · {r.distanceKm} km round trip · {r.capacityUtilizationPercent}% capacity</p><div className="flow">{r.stops.map((s:any,i:number)=><span key={s.lotId}>{i+1}. {s.lotId}<small>{s.weight} kg · +{s.distanceFromPreviousKm} km</small></span>)}</div></div>)}
+      </div>
       <div className="grid">
         {q.data
           ?.filter((x) =>

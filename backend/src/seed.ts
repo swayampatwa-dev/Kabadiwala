@@ -1,0 +1,1 @@
+import {resetData,lots,recyclers,materials,payments,anomalies} from "./data.js";await resetData();console.log(`Seeded demo: ${materials.length} materials, ${recyclers.length} recyclers, ${lots.length} lots, ${payments.length} payments, ${anomalies.length} anomalies`);

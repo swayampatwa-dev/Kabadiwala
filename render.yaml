@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: chakrasetu-api
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build -w backend
+    startCommand: npm run start -w backend
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: chakrasetu-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        sync: false
+databases:
+  - name: chakrasetu-db
+    plan: free
+    databaseName: chakrasetu
+    user: chakrasetu

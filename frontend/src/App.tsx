@@ -204,6 +204,14 @@ function NotificationCenter({user}:{user:User}){
   const client=useQueryClient();
   const q=useQuery({queryKey:["notifications",user.id],queryFn:()=>api<any[]>("/notifications"),refetchInterval:10000});
   const unread=q.data?.filter(n=>!n.read).length||0;
+  useEffect(()=>{
+    if(!q.data?.length||!("Notification" in window)||Notification.permission!=="granted")return;
+    const key=`kbd-seen-notifications-${user.id}`;
+    const seen=new Set<string>(JSON.parse(localStorage.getItem(key)||"[]"));
+    const fresh=q.data.filter(n=>!n.read&&!seen.has(n.id));
+    fresh.forEach(async n=>{const reg=await navigator.serviceWorker?.ready; if(reg)reg.showNotification(n.title,{body:n.message,tag:n.id,icon:"/icon.svg"});else new Notification(n.title,{body:n.message,tag:n.id});seen.add(n.id);});
+    if(fresh.length)localStorage.setItem(key,JSON.stringify([...seen].slice(-100)));
+  },[q.data,user.id]);
   const enable=async()=>{
     if(!("Notification" in window))return;
     const permission=await Notification.requestPermission();

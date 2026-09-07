@@ -70,4 +70,30 @@ describe("complete KABADI+ workflow",()=>{
     expect(plan.body.data.routes.length).toBeGreaterThan(0);
     expect(plan.body.data.routes.every((r:any)=>r.totalWeightKg<=80&&r.distanceKm>0)).toBe(true);
   });
+
+  it("runs household order → collector offer → weight revision → customer confirmation",async()=>{
+    const customer=await login("user@kabadi.local");
+    const collector=await login("collector@kabadi.local");
+    const created=await authorized("post","/api/marketplace/orders",customer).send({items:[{name:"Old phone",category:"Mobile Phone",quantity:1,estimatedWeight:1,condition:"USED"}],address:"Kothrud, Pune",couponCode:"GREEN50"});
+    expect(created.status).toBe(201);
+    const orderId=created.body.data.orderId;
+    const bid=await authorized("post",`/api/marketplace/orders/${orderId}/offers`,collector).send({amount:800});
+    expect(bid.status).toBe(201);
+    await authorized("post",`/api/marketplace/offers/${bid.body.data.id}/decision`,customer).send({decision:"ACCEPT"});
+    const weight=await authorized("post",`/api/marketplace/orders/${orderId}/verify-weight`,collector).send({actualWeight:.8});
+    expect(weight.body.data).toMatchObject({status:"PRICE_REVISION_PENDING",revisedAmount:640});
+    const done=await authorized("post",`/api/marketplace/orders/${orderId}/final-decision`,customer).send({decision:"ACCEPT"});
+    expect(done.body.data).toMatchObject({status:"COMPLETED",finalAmount:640,commission:32});
+    const recyclerView=await authorized("get","/api/marketplace/orders",await login("recycler@kabadi.local"));
+    expect(recyclerView.status).toBe(403);
+  });
+
+  it("requires admin approval for new collectors",async()=>{
+    const signup=await request(app).post("/api/auth/signup").send({name:"New Collector",email:"new.collector@test.local",phone:"9999999998",password:"StrongPass1!",role:"COLLECTOR"});
+    expect(signup.body.data.status).toBe("PENDING");
+    expect((await request(app).post("/api/auth/login").send({identifier:"new.collector@test.local",password:"StrongPass1!"})).status).toBe(403);
+    const admin=await login("admin@kabadi.local");
+    await authorized("patch",`/api/admin/users/${signup.body.data.id}/status`,admin).send({status:"APPROVED"});
+    expect((await request(app).post("/api/auth/login").send({identifier:"new.collector@test.local",password:"StrongPass1!"})).status).toBe(200);
+  });
 });

@@ -101,8 +101,9 @@ function BrandMark({ dark = false }: { dark?: boolean }) {
     </div>
   );
 }
-function Login({ onLogin }: { onLogin: (u: User) => void }) {
-  const [identifier, setId] = useState("collector@kabadi.local"),
+function Login({ onLogin,onSignup,portal }: { onLogin: (u: User) => void;onSignup:()=>void;portal?:"CUSTOMER"|"COLLECTOR"|"RECYCLER"|"ADMIN" }) {
+  const accounts:any={CUSTOMER:"user@kabadi.local",COLLECTOR:"collector@kabadi.local",RECYCLER:"recycler@kabadi.local",ADMIN:"admin@kabadi.local"};
+  const [identifier, setId] = useState(portal?accounts[portal]:"user@kabadi.local"),
     [password, setPw] = useState("Demo123!"),
     [error, setError] = useState("");
   const submit = async (e: any) => {
@@ -138,10 +139,11 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
           <h2>Welcome back</h2>
           <p className="muted">Choose a workspace or enter the demo account.</p>
           {[
-            ["Collector", "collector@kabadi.local"],
-            ["Recycler", "recycler@kabadi.local"],
-            ["Admin", "admin@kabadi.local"],
-          ].map(([r, e]) => (
+            ["CUSTOMER","Household user", "user@kabadi.local"],
+            ["COLLECTOR","Collector", "collector@kabadi.local"],
+            ["RECYCLER","Recycler", "recycler@kabadi.local"],
+            ["ADMIN","Admin", "admin@kabadi.local"],
+          ].filter(([role])=>!portal||role===portal).map(([,r, e]) => (
             <button className="demo-account" key={r} onClick={() => setId(e)}>
               <b>{r} portal</b>
               <br />
@@ -170,12 +172,23 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
           <p className="muted" style={{ fontSize: 12 }}>
             Password: Demo123! · OTP: 123456. Prototype authentication only.
           </p>
+          {portal!=="ADMIN"&&<button className="btn outline full" onClick={onSignup}>Create a new account</button>}
         </div>
       </section>
     </div>
   );
 }
+function Signup({back}:{back:()=>void}){
+  const [form,setForm]=useState({name:"",email:"",phone:"",password:"",role:"CUSTOMER"});
+  const [message,setMessage]=useState("");
+  const submit=async(e:any)=>{e.preventDefault();try{const x=await api<any>("/auth/signup",{method:"POST",body:JSON.stringify(form)});setMessage(x.message+". You can now return to sign in.");}catch(e:any){setMessage(e.message)}};
+  return <div className="login"><section className="login-hero"><BrandMark/><div className="eyebrow" style={{color:"#5ed49a"}}>Join the circular network</div><h1>Sell safely.<br/>Earn fairly.</h1><p>Household users can list personal scrap. Collectors and recyclers are activated only after admin verification.</p></section><section className="login-box"><div><div className="eyebrow">New account</div><h2>Sign up</h2><form className="form" onSubmit={submit}>{[["Full name","name","text"],["Email","email","email"],["Phone","phone","tel"],["Password","password","password"]].map(([label,key,type])=><div className="field" key={key}><label>{label}</label><input type={type} value={(form as any)[key]} onChange={e=>setForm({...form,[key]:e.target.value})} required/></div>)}<div className="field"><label>I am a</label><select value={form.role} onChange={e=>setForm({...form,role:e.target.value})}><option value="CUSTOMER">Household user selling personal items</option><option value="COLLECTOR">Scrap collector</option><option value="RECYCLER">Recycler</option></select></div>{message&&<div className={message.includes("return")?"success":"notice"}>{message}</div>}<button className="btn full">Create account</button><button type="button" className="btn outline full" onClick={back}>Back to login</button></form></div></section></div>;
+}
 const menus: any = {
+  CUSTOMER: [
+    [Home, "Sell items", "/customer/dashboard"],
+    [Box, "My orders", "/customer/orders"],
+  ],
   COLLECTOR: [
     [Home, "Home", "/collector/dashboard"],
     [Box, "Lots", "/collector/lots"],
@@ -183,6 +196,7 @@ const menus: any = {
     [Recycle, "Recyclers", "/collector/recyclers"],
     [ShieldCheck, "Safety", "/collector/safety"],
     [ReceiptIndianRupee, "Earnings", "/collector/earnings"],
+    [Truck, "Household pickups", "/collector/orders"],
   ],
   RECYCLER: [
     [LayoutDashboard, "Dashboard", "/recycler/dashboard"],
@@ -197,6 +211,8 @@ const menus: any = {
     [Database, "Datasets", "/admin/datasets"],
     [CircleDollarSign, "Business", "/admin/business"],
     [FileCheck2, "Audit log", "/admin/audit"],
+    [Users, "Approvals", "/admin/approvals"],
+    [Box, "User orders", "/admin/orders"],
   ],
 };
 function NotificationCenter({user}:{user:User}){
@@ -346,6 +362,14 @@ function RoutesContent({
 }) {
   return (
     <Routes>
+      <Route
+        path="/customer/dashboard"
+        element={<CustomerSell toast={toast} />}
+      />
+      <Route path="/customer/orders" element={<CustomerOrders toast={toast}/>} />
+      <Route path="/collector/orders" element={<CollectorOrders toast={toast}/>} />
+      <Route path="/admin/approvals" element={<AdminApprovals toast={toast}/>} />
+      <Route path="/admin/orders" element={<AdminOrders/>} />
       <Route
         path="/collector/dashboard"
         element={<CollectorDashboard user={user} />}
@@ -1773,6 +1797,18 @@ function Traceability() {
     </div>
   );
 }
+async function imageData(file:File){const img=new Image();const url=URL.createObjectURL(file);try{img.src=url;await img.decode();const scale=Math.min(1,900/Math.max(img.width,img.height));const c=document.createElement("canvas");c.width=Math.round(img.width*scale);c.height=Math.round(img.height*scale);c.getContext("2d")!.drawImage(img,0,0,c.width,c.height);return c.toDataURL("image/jpeg",.72);}finally{URL.revokeObjectURL(url)}}
+function CustomerSell({toast}:{toast:(s:string)=>void}){
+  const [items,setItems]=useState<any[]>([]);const [item,setItem]=useState({name:"Old mobile phone",category:"Mobile Phone",quantity:1,estimatedWeight:0.4,condition:"USED",photo:""});const [address,setAddress]=useState("Pune, Maharashtra");const [couponCode,setCoupon]=useState("");const [estimate,setEstimate]=useState<any>(null);const nav=useNavigate();
+  const photo=async(f?:File)=>{if(!f)return;const data=await imageData(f);setItem({...item,photo:data});try{const ml=await classifyImage(f);if(ml.suggestedMaterial)setItem(x=>({...x,category:ml.suggestedMaterial!}));toast("AI inspected the photo on this device");}catch{toast("Photo added; price AI will use selected category")}};
+  const add=async()=>{const p=await api<any>("/prices/estimate",{method:"POST",body:JSON.stringify({material:item.category,weight:item.estimatedWeight,condition:item.condition})});setEstimate(p);setItems([...items,{...item,aiFairValue:Math.round(p.recommendedFairPrice*item.estimatedWeight)}]);toast("Item added to pickup cart")};
+  const place=()=>{const send=(coords:any={})=>api<any>("/marketplace/orders",{method:"POST",body:JSON.stringify({items,address,couponCode,...coords})}).then(o=>{toast(`Order ${o.orderId} sent to verified collectors`);nav("/customer/orders")}).catch(e=>toast(e.message));navigator.geolocation?navigator.geolocation.getCurrentPosition(p=>send({latitude:p.coords.latitude,longitude:p.coords.longitude}),()=>send()):send()};
+  return <><Head eyebrow="Personal scrap pickup" title="What would you like to sell?"/><div className="grid"><section className="card panel7 panel8"><div className="form"><div className="field"><label>Item name</label><input value={item.name} onChange={e=>setItem({...item,name:e.target.value})}/></div><div className="field"><label>Material</label><select value={item.category} onChange={e=>setItem({...item,category:e.target.value})}>{["Mobile Phone","Laptop","Computer","Battery","Cable","Copper","Aluminium","PCB","Other E-Waste"].map(x=><option key={x}>{x}</option>)}</select></div><div className="row"><div className="field"><label>Approx. weight kg</label><input type="number" step=".1" value={item.estimatedWeight} onChange={e=>setItem({...item,estimatedWeight:+e.target.value})}/></div><div className="field"><label>Condition</label><select value={item.condition} onChange={e=>setItem({...item,condition:e.target.value})}><option>GOOD</option><option>USED</option><option>POOR</option></select></div></div><label className="btn secondary"><Camera size={17}/><input hidden type="file" accept="image/*" capture="environment" onChange={e=>photo(e.target.files?.[0])}/> Add item photo</label>{item.photo&&<img src={item.photo} alt="Item preview" style={{height:120,objectFit:"cover",borderRadius:12}}/>}<button className="btn" onClick={add}>Add to pickup cart</button>{estimate&&<div className="success">AI fair rate: {money(estimate.low)}–{money(estimate.high)}/kg</div>}</div></section><aside className="card panel4"><h2>Pickup cart ({items.length})</h2>{items.map((x,i)=><div className="cart-item" key={i}>{x.photo&&<img src={x.photo} alt=""/>}<span><b>{x.name}</b><small>{x.category} · {x.estimatedWeight} kg · AI value {money(x.aiFairValue)}</small></span><button onClick={()=>setItems(items.filter((_,n)=>n!==i))}>×</button></div>)}<div className="field"><label>Pickup address</label><textarea value={address} onChange={e=>setAddress(e.target.value)}/></div><div className="field"><label>Coupon code</label><input value={couponCode} onChange={e=>setCoupon(e.target.value.toUpperCase())}/></div><button className="btn full" disabled={!items.length} onClick={place}>Place pickup order</button><p className="muted">Only admin-approved collectors receive this order. Recyclers are never shown to household users.</p></aside></div></>;
+}
+function CustomerOrders({toast}:{toast:(s:string)=>void}){const qc=useQueryClient();const q=useQuery({queryKey:["market-orders"],queryFn:()=>api<any[]>("/marketplace/orders"),refetchInterval:8000});const decide=async(id:string,decision:string)=>{await api(`/marketplace/offers/${id}/decision`,{method:"POST",body:JSON.stringify({decision})});toast(decision==="ACCEPT"?"Collector assigned":"Offer rejected; order reopened to collectors");qc.invalidateQueries({queryKey:["market-orders"]})};const final=async(id:string,decision:string)=>{await api(`/marketplace/orders/${id}/final-decision`,{method:"POST",body:JSON.stringify({decision})});toast(decision==="ACCEPT"?"Final weight and payment confirmed":"Admin dispute review requested");qc.invalidateQueries({queryKey:["market-orders"]})};return <><Head eyebrow="Private household orders" title="My pickup orders"/><div className="grid">{q.data?.map(o=><article className="card panel6" key={o.id}><Status s={o.status}/><h2>{o.orderId}</h2><p>{o.items.map((x:any)=>x.name).join(" · ")}</p><div className="success"><b>AI fair value</b><br/>{money(o.priceRange.low)}–{money(o.priceRange.high)}</div>{o.offers?.map((x:any)=><div className="offer" key={x.id}><b>{x.collectorName}: {money(x.amount)}</b><div className="row"><button className="btn" onClick={()=>decide(x.id,"ACCEPT")}>Accept</button><button className="btn outline" onClick={()=>decide(x.id,"REJECT")}>Reject & reopen</button></div></div>)}{["PRICE_REVISION_PENDING","PAYMENT_READY"].includes(o.status)&&<div className="notice">Verified weight: {o.actualWeight} kg · Final value {money(o.revisedAmount)}<div className="row"><button className="btn" onClick={()=>final(o.orderId,"ACCEPT")}>Accept & confirm payment</button><button className="btn outline" onClick={()=>final(o.orderId,"REJECT")}>Dispute</button></div></div>}</article>)}</div></>}
+function CollectorOrders({toast}:{toast:(s:string)=>void}){const qc=useQueryClient();const q=useQuery({queryKey:["market-orders"],queryFn:()=>api<any[]>("/marketplace/orders"),refetchInterval:8000});const [amount,setAmount]=useState(700);const [weight,setWeight]=useState(1);const offer=async(id:string)=>{await api(`/marketplace/orders/${id}/offers`,{method:"POST",body:JSON.stringify({amount,pickupAt:new Date(Date.now()+86400000).toISOString()})});toast("Offer sent to user");qc.invalidateQueries({queryKey:["market-orders"]})};const verify=async(id:string)=>{await api(`/marketplace/orders/${id}/verify-weight`,{method:"POST",body:JSON.stringify({actualWeight:weight})});toast("Actual weight submitted to user");qc.invalidateQueries({queryKey:["market-orders"]})};return <><Head eyebrow="Approved collector marketplace" title="Household pickup requests"/><div className="grid">{q.data?.map(o=><article className="card panel6" key={o.id}><Status s={o.status}/><h2>{o.orderId}</h2><p>{o.items.map((x:any)=>`${x.name} · ${x.estimatedWeight} kg`).join(" | ")}</p><p><MapPin size={15}/> {o.address}</p><div className="success">AI guidance {money(o.priceRange.low)}–{money(o.priceRange.high)}</div>{o.status==="OPEN"&&<div className="row"><input type="number" value={amount} onChange={e=>setAmount(+e.target.value)}/><button className="btn" onClick={()=>offer(o.orderId)}>Offer price</button></div>}{o.status==="PICKUP_ASSIGNED"&&<div className="form"><div className="field"><label>Scale-verified total weight kg</label><input type="number" step=".1" value={weight} onChange={e=>setWeight(+e.target.value)}/></div><button className="btn" onClick={()=>verify(o.orderId)}>Submit weight & final price</button></div>}</article>)}</div></>}
+function AdminApprovals({toast}:{toast:(s:string)=>void}){const qc=useQueryClient();const users=useQuery({queryKey:["admin-users"],queryFn:()=>api<any[]>("/admin/users")});const config=useQuery({queryKey:["market-config"],queryFn:()=>api<any>("/admin/marketplace-config")});const [values,setValues]=useState({commissionPercent:5,deliveryCharge:40,freeDeliveryAbove:1000});const [coupon,setCoupon]=useState({code:"WELCOME100",type:"FLAT",value:100,minOrderValue:500});useEffect(()=>{if(config.data)setValues({commissionPercent:config.data.commissionPercent,deliveryCharge:config.data.deliveryCharge,freeDeliveryAbove:config.data.freeDeliveryAbove})},[config.data]);const approve=async(id:string,status:string)=>{await api(`/admin/users/${id}/status`,{method:"PATCH",body:JSON.stringify({status})});toast(`Account ${status.toLowerCase()}`);qc.invalidateQueries({queryKey:["admin-users"]})};const save=async()=>{await api("/admin/marketplace-config",{method:"PATCH",body:JSON.stringify(values)});toast("Marketplace charges updated")};const addCoupon=async()=>{await api("/admin/coupons",{method:"POST",body:JSON.stringify(coupon)});toast("Coupon added");qc.invalidateQueries({queryKey:["market-config"]})};return <><Head eyebrow="Trust and commercial controls" title="Approvals & marketplace settings"/><div className="grid"><section className="card panel8"><h2>Collector and recycler approvals</h2>{users.data?.filter(u=>["COLLECTOR","RECYCLER"].includes(u.role)).map(u=><div className="approval-row" key={u.id}><span><b>{u.name}</b><small>{u.role} · {u.email}</small></span><Status s={u.status}/>{u.status==="PENDING"&&<><button className="btn" onClick={()=>approve(u.id,"APPROVED")}>Approve</button><button className="btn outline" onClick={()=>approve(u.id,"REJECTED")}>Reject</button></>}</div>)}</section><aside className="card panel4"><h2>Charges</h2>{Object.entries(values).map(([k,v])=><div className="field" key={k}><label>{k}</label><input type="number" value={v} onChange={e=>setValues({...values,[k]:+e.target.value})}/></div>)}<button className="btn full" onClick={save}>Save charges</button><h3>Add coupon</h3><div className="field"><input placeholder="Code" value={coupon.code} onChange={e=>setCoupon({...coupon,code:e.target.value})}/></div><div className="row"><select value={coupon.type} onChange={e=>setCoupon({...coupon,type:e.target.value})}><option>FLAT</option><option>PERCENT</option></select><input type="number" value={coupon.value} onChange={e=>setCoupon({...coupon,value:+e.target.value})}/></div><button className="btn secondary full" onClick={addCoupon}>Add coupon</button><p>{config.data?.coupons?.map((c:any)=>c.code).join(" · ")}</p></aside></div></>}
+function AdminOrders(){const q=useQuery({queryKey:["admin-market-orders"],queryFn:()=>api<any[]>("/marketplace/orders"),refetchInterval:10000});return <><Head eyebrow="End-to-end oversight" title="Household marketplace orders"/><div className="tablewrap card"><table><thead><tr><th>Order</th><th>User</th><th>Items</th><th>AI value</th><th>Final</th><th>Status</th></tr></thead><tbody>{q.data?.map(o=><tr key={o.id}><td>{o.orderId}</td><td>{o.customerId}</td><td>{o.items.length}</td><td>{money(o.aiEstimatedValue)}</td><td>{money(o.finalAmount)}</td><td><Status s={o.status}/></td></tr>)}</tbody></table></div></>}
 function Chart() {
   const d = [
     { m: "Apr", v: 20 },
@@ -1827,7 +1863,9 @@ function Analytics({ title }: { title: string }) {
 }
 export default function App() {
   const [user, setUser] = useState<User | null>(session.user);
-  if (!user) return <Login onLogin={setUser} />;
+  const [signup,setSignup]=useState(false);
+  const path=location.pathname;const portal=path.startsWith("/admin")?"ADMIN":path.startsWith("/collector-login")?"COLLECTOR":path.startsWith("/recycler-login")?"RECYCLER":path.startsWith("/user-login")?"CUSTOMER":undefined;
+  if (!user) return signup?<Signup back={()=>setSignup(false)}/>:<Login portal={portal} onLogin={setUser} onSignup={()=>setSignup(true)} />;
   return (
     <Layout
       user={user}

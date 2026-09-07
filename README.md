@@ -21,11 +21,14 @@ Open `http://localhost:5173`. API: `http://localhost:4000/api/health`.
 
 | Role | Email | Password |
 |---|---|---|
+| Household user | user@kabadi.local | Demo123! |
 | Collector | collector@kabadi.local | Demo123! |
 | Recycler | recycler@kabadi.local | Demo123! |
 | Admin | admin@kabadi.local | Demo123! |
 
 Demo OTP is `123456`. This is visibly marked as prototype authentication.
+
+Separate entry URLs: `/user-login`, `/collector-login`, `/recycler-login`, and `/admin/login`. New collector/recycler registrations remain pending until approved in `/admin/approvals`.
 
 ## Commands
 
@@ -37,9 +40,10 @@ Demo OTP is `123456`. This is visibly marked as prototype authentication.
 
 ## Features
 
-- Collector: on-device TensorFlow.js/MobileNet assisted scan, consent-based live GPS with OpenStreetMap, fair pricing, guided lot creation, offline IndexedDB sync, live notification inbox, recycler matching, digital passport, earnings and multilingual safety.
+- Household user: multi-item photo cart, private AI price range, coupon, pickup order, anonymous collector offers, accept/reject/rebroadcast, verified-weight revision and final payout confirmation.
+- Collector: approved-only household pickup marketplace, price offers, address reveal after acceptance, scale-weight verification, on-device TensorFlow.js/MobileNet scan, GPS, offline sync and notifications.
 - Recycler: incoming lots, real quotes, capacity-aware nearest-neighbour pickup route optimization, OTP handover, weight discrepancy flags, notification events and local payment recording.
-- Admin: formalization dashboard, recycler review, anomalies, dataset health, audit log, business metrics and network flywheel.
+- Admin: collector/recycler approval, marketplace order oversight, commission/delivery-charge controls, coupon creation, formalization dashboard, anomalies, datasets, audit log and business metrics.
 - Platform: role-checked JWT API, structured errors, validation, rate limiting, idempotent client operations, status machine, PWA shell and CSV-ready structured endpoints.
 
 ## Environment
@@ -52,7 +56,7 @@ Sign in as collector, use the connectivity button to enable **OFFLINE DEMO MODE*
 
 ## AI demo
 
-Classification and pricing are deterministic local services. Filenames containing `battery`, `cable`, or `lcd` produce the respective class; other images produce PCB. Predictions are advisory and no measured model accuracy is claimed.
+Photos are compressed locally and TensorFlow.js MobileNet runs on-device. Its visual evidence is mapped into supported e-waste classes; the deterministic API provider remains a fallback. Predictions are advisory and no measured field accuracy is claimed.
 
 ## Tests and known limitations
 

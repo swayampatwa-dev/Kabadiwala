@@ -17,6 +17,8 @@ export function snapshotData(){return {users:users.map((u:any)=>({...u,passwordH
 export function hydrateData(state:any){
   if(!state||typeof state!=="object")return;
   users=Array.isArray(state.users)?state.users:users;
+  const demoPhones:Record<string,string>={"u-customer":"5555555555","u-collector":"6666666666","u-recycler":"9876543211","u-admin":"9876543212"};
+  users=users.map((u:any)=>demoPhones[u.id]?{...u,phone:demoPhones[u.id]}:u);
   lots=Array.isArray(state.lots)?state.lots:lots;
   quotes=Array.isArray(state.quotes)?state.quotes:quotes;
   payments=Array.isArray(state.payments)?state.payments:payments;

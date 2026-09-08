@@ -8,3 +8,8 @@ test-results
 *.log
 *.mp4
 *.tsbuildinfo
+.reference/
+demo-video/
+tools/capture-demo-screen.ps1
+tools/capture-workflow.mjs
+tools/make-demo-gif.py

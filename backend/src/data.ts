@@ -3,8 +3,8 @@ import { estimatePrice, materialRates, matchScore } from "./domain.js";
 export const materials=Object.keys(materialRates).map((name,i)=>({id:`m${i+1}`,name,hi:{PCB:"पीसीबी",Cable:"केबल",Battery:"बैटरी",Copper:"ताँबा"}[name]||name,mr:{PCB:"पीसीबी",Cable:"केबल",Battery:"बॅटरी",Copper:"तांबे"}[name]||name,safety:["Battery","CRT"].includes(name)?"HIGH":"NORMAL",description:`${name} e-waste material`,rate:materialRates[name],seededDemoData:true}));
 export const recyclers=Array.from({length:10},(_,i)=>({id:`r${i+1}`,name:["GreenCycle Pune","EcoLoop Recyclers","Bharat E-Recovery","Sahyadri Circular","Urban Mine Works","CleanTech Metals","ReNew E-Waste","Prithvi Recovery","ZeroWaste Systems","ReCircuit India"][i],distance:2+i*1.4,authorized:i!==8,verificationLabel:"Verification simulated for prototype",materials:i%2?["PCB","Cable","Copper"]:["Battery","PCB","Computer"],offer:420+i*4,pickup:i!==7,reliability:96-i,location:"Pune, Maharashtra",status:i===8?"PENDING":"VERIFIED",seededDemoData:true})).map(r=>({...r,matchScore:matchScore({distance:r.distance,price:r.offer,maxPrice:456,authorized:r.authorized,pickup:r.pickup,reliability:r.reliability})})).sort((a,b)=>b.matchScore-a.matchScore);
 export let users=[
- {id:"u-customer",name:"Priya Sharma",email:"user@kabadi.local",phone:"9876543209",role:"CUSTOMER",status:"APPROVED"},
- {id:"u-collector",name:"Ramesh Kumar",email:"collector@kabadi.local",phone:"9876543210",role:"COLLECTOR",status:"APPROVED"},
+ {id:"u-customer",name:"Priya Sharma",email:"user@kabadi.local",phone:"5555555555",role:"CUSTOMER",status:"APPROVED"},
+ {id:"u-collector",name:"Ramesh Kumar",email:"collector@kabadi.local",phone:"6666666666",role:"COLLECTOR",status:"APPROVED"},
  {id:"u-recycler",name:"GreenCycle Pune",email:"recycler@kabadi.local",phone:"9876543211",role:"RECYCLER",status:"APPROVED"},
  {id:"u-admin",name:"Asha Admin",email:"admin@kabadi.local",phone:"9876543212",role:"ADMIN",status:"APPROVED"}
 ];

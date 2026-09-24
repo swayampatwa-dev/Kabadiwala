@@ -6,6 +6,8 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import * as db from "./data.js";
+import { pin, offerItems, localOffers } from "./local-offers.js";
+import { addDemoBuyers } from "./demo-buyers.js";
 import { scheduleSave } from "./persistence.js";
 import {
   allowedTransitions,
@@ -15,6 +17,9 @@ import {
 } from "./domain.js";
 const secret = process.env.JWT_SECRET || "local-demo-secret-change-me";
 const app = express();
+// Chat history is private: generic order responses must never include it.
+// The authorized messages endpoint returns the message array directly.
+app.set("json replacer",(key:string,value:any)=>key==="messages"?undefined:value);
 const allowedOrigins = (process.env.FRONTEND_URL || "")
   .split(",")
   .map((x) => x.trim())
@@ -141,7 +146,7 @@ app.post("/api/auth/signup", async (req, res) => {
       email: z.string().email(),
       phone: z.string().min(10),
       password: z.string().min(8),
-      role: z.enum(["CUSTOMER", "COLLECTOR", "RECYCLER"]),
+      role: z.enum(["CUSTOMER", "COLLECTOR", "AGGREGATOR", "RECYCLER"]),
     })
     .safeParse(req.body);
   if (!s.success)
@@ -179,8 +184,7 @@ app.post("/api/auth/signup", async (req, res) => {
     {
       id: user.id,
       status,
-      message:
-        status === "APPROVED" ? "Account ready" : "Admin approval required",
+      message: status === "APPROVED" ? "Account ready" : "Admin approval required",
     },
     201,
   );
@@ -227,12 +231,44 @@ app.post("/api/auth/verify-otp", (req, res) => {
   });
 });
 app.get("/api/materials", (_, res) => ok(res, db.materials));
-app.get("/api/prices", (_, res) =>
-  ok(
-    res,
-    db.materials.map((m) => ({ ...m, pricing: estimatePrice(m.name) })),
-  ),
-);
+app.get("/api/account/location",auth(),(req:any,res)=>{
+  const u=db.users.find(u=>u.id===req.user.id);
+  return ok(res,{address:u.address||"",pincode:u.pincode||"",servicePincodes:u.servicePincodes||[],buyingRates:u.buyingRates||{}});
+});
+app.put("/api/account/location",auth(["CUSTOMER","RECYCLER"]),(req:any,res)=>{
+  const schema=z.object({address:z.string().trim().min(5).max(500),pincode:pin,servicePincodes:z.array(pin).max(100).optional(),buyingRates:z.record(z.string().min(2),z.number().positive().max(1000000)).optional()});
+  const parsed=schema.safeParse(req.body);if(!parsed.success)return fail(res,400,"VALIDATION_ERROR",parsed.error.issues[0].message);
+  const u=db.users.find(u=>u.id===req.user.id);u.address=parsed.data.address;u.pincode=parsed.data.pincode;
+  if(u.role==="RECYCLER"){u.servicePincodes=[...new Set([parsed.data.pincode,...(parsed.data.servicePincodes||[])])];u.buyingRates=parsed.data.buyingRates||{};u.ratesUpdatedAt=new Date().toISOString();}
+  audit(u.id,u.role,"LOCATION_RATES_UPDATED","User",u.id);return ok(res,{saved:true});
+});
+app.post("/api/marketplace/compare",auth(["CUSTOMER"]),(req:any,res)=>{
+  const parsed=z.object({pincode:pin,items:offerItems}).safeParse(req.body);
+  if(!parsed.success)return fail(res,400,"VALIDATION_ERROR",parsed.error.issues[0].message);
+  return ok(res,localOffers(db.users,parsed.data.pincode,parsed.data.items));
+});
+app.get("/api/prices", (req, res) => {
+  const category = String(req.query.category || "");
+  const records = category ? db.priceRecords.filter((p) => p.category === category) : db.priceRecords;
+  ok(res, records);
+});
+app.get("/api/prices/history", (req, res) => {
+  const category = String(req.query.category || "PCB");
+  ok(res, db.priceRecords.filter((p) => p.category === category).sort((a,b) => +new Date(a.effectiveDate)-+new Date(b.effectiveDate)));
+});
+app.get("/api/safety", (_, res) => ok(res, db.safetyContent.filter((x) => x.active)));
+app.post("/api/admin/materials",auth(["ADMIN","DATA_OPERATOR"]),(req:any,res)=>{const parsed=z.object({category:z.string().min(2),subcategory:z.string().min(2),hi:z.string().min(1),mr:z.string().min(1),rate:z.coerce.number().nonnegative(),safetyLevel:z.enum(["NORMAL","HIGH"])}).safeParse(req.body);if(!parsed.success)return fail(res,400,"VALIDATION_ERROR",parsed.error.issues[0].message);const item:any={id:crypto.randomUUID(),name:parsed.data.category,...parsed.data,active:true,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),source:"ADMIN_ENTRY",validationStatus:"VALIDATED"};db.materials.push(item);audit(req.user.id,req.user.role,"MATERIAL_CREATED","Material",item.id,item);return ok(res,item,201);});
+app.patch("/api/admin/materials/:id",auth(["ADMIN","DATA_OPERATOR"]),(req:any,res)=>{const item:any=db.materials.find((x:any)=>x.id===req.params.id);if(!item)return fail(res,404,"MATERIAL_NOT_FOUND","Material not found");const previous={...item};Object.assign(item,req.body,{updatedAt:new Date().toISOString()});audit(req.user.id,req.user.role,"MATERIAL_UPDATED","Material",item.id,{previous,newValue:item});return ok(res,item);});
+app.post("/api/admin/prices",auth(["ADMIN","DATA_OPERATOR"]),(req:any,res)=>{const parsed=z.object({materialId:z.string(),category:z.string(),subcategory:z.string(),location:z.string().min(2),effectiveDate:z.string(),minRate:z.coerce.number().nonnegative(),maxRate:z.coerce.number().positive(),unit:z.literal("kg"),offeredBy:z.string().min(2),source:z.string().min(2)}).refine(x=>x.maxRate>=x.minRate,{message:"Maximum rate must be at least minimum rate"}).safeParse(req.body);if(!parsed.success)return fail(res,400,"VALIDATION_ERROR",parsed.error.issues[0].message);const item:any={id:crypto.randomUUID(),...parsed.data,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),validationStatus:"VALIDATED"};db.priceRecords.push(item);audit(req.user.id,req.user.role,"PRICE_CREATED","PriceRecord",item.id,item);return ok(res,item,201);});
+app.post("/api/admin/safety",auth(["ADMIN"]),(req:any,res)=>{const parsed=z.object({material:z.string(),title:z.object({en:z.string(),hi:z.string(),mr:z.string()}),body:z.object({en:z.string(),hi:z.string(),mr:z.string()})}).safeParse(req.body);if(!parsed.success)return fail(res,400,"VALIDATION_ERROR",parsed.error.issues[0].message);const item:any={id:crypto.randomUUID(),...parsed.data,active:true,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),source:"ADMIN_ENTRY",validationStatus:"VALIDATED"};db.safetyContent.push(item);audit(req.user.id,req.user.role,"SAFETY_CREATED","SafetyContent",item.id,item);return ok(res,item,201);});
+app.get("/api/profile", auth(), (req:any, res) => ok(res, db.users.find((u:any) => u.id === req.user.id)));
+app.patch("/api/profile", auth(), (req:any, res) => {
+  const user:any = db.users.find((u:any) => u.id === req.user.id);
+  const parsed = z.object({preferredLanguage:z.enum(["en","hi","mr"]).optional(),generalOperatingLocation:z.string().min(2).optional(),name:z.string().min(2).optional()}).safeParse(req.body);
+  if(!parsed.success) return fail(res,400,"VALIDATION_ERROR",parsed.error.issues[0].message);
+  Object.assign(user, parsed.data, {updatedAt:new Date().toISOString()});
+  audit(req.user.id,req.user.role,"PROFILE_UPDATED","User",req.user.id,parsed.data); return ok(res,user);
+});
 app.post("/api/prices/estimate", (req, res) =>
   ok(
     res,
@@ -292,18 +328,24 @@ app.post("/api/ai/classify", (req, res) => {
 app.get("/api/lots", auth(), (req: any, res) =>
   ok(
     res,
-    req.user.role === "COLLECTOR"
+    ["COLLECTOR", "AGGREGATOR"].includes(req.user.role)
       ? db.lots.filter((x) => x.collectorId === req.user.id)
       : db.lots,
   ),
 );
-app.post("/api/lots", auth(["COLLECTOR", "ADMIN"]), (req: any, res) => {
+app.post("/api/lots", auth(["COLLECTOR", "AGGREGATOR", "ADMIN"]), (req: any, res) => {
   const s = z
     .object({
       materialCategory: z.string(),
+      materialSubcategory: z.string().min(2),
+      description: z.string().min(2),
+      photoUrl: z.string().min(1),
       approxWeight: z.coerce.number().positive().max(10000),
       condition: z.enum(["POOR", "USED", "GOOD"]).default("USED"),
-      location: z.string().min(2),
+      sourceType: z.enum(["HOUSEHOLD_COLLECTION","BUSINESS_COLLECTION","REPAIR_SHOP","BULK_AGGREGATION","OTHER"]),
+      location: z.union([z.string().min(2),z.object({label:z.string().min(2),latitude:z.number(),longitude:z.number(),accuracy:z.number().nonnegative(),capturedAt:z.string()})]),
+      capturedAt: z.string().optional(),
+      preferredHandover: z.enum(["PICKUP","DROPOFF","AGREED_LOCATION"]).default("PICKUP"),
       clientOperationId: z.string().optional(),
     })
     .safeParse(req.body);
@@ -328,7 +370,7 @@ app.post("/api/lots", auth(["COLLECTOR", "ADMIN"]), (req: any, res) => {
     priceRange: { low: p.totalLow, high: p.totalHigh },
     status: "CREATED",
     syncStatus: "SYNCED",
-    createdAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), source:"COLLECTOR_ENTRY", validationStatus:"USER_CONFIRMED",
   };
   db.lots.unshift(lot);
   if (s.data.clientOperationId) db.synced.add(s.data.clientOperationId);
@@ -363,7 +405,8 @@ app.get("/api/recyclers", (_, res) => ok(res, db.recyclers));
 app.post("/api/recyclers/:id/verify", auth(["ADMIN"]), (req: any, res) => {
   const r = db.recyclers.find((x) => x.id === req.params.id);
   if (!r) return fail(res, 404, "RECYCLER_NOT_FOUND", "Recycler not found");
-  r.status = "VERIFIED";
+  r.status = "AUTHORIZED";
+  r.authorizationStatus = "AUTHORIZED";
   r.authorized = true;
   audit(req.user.id, req.user.role, "RECYCLER_VERIFIED", "Recycler", r.id);
   ok(res, r);
@@ -406,6 +449,17 @@ app.get("/api/lots/:id/quotes", auth(), (req, res) =>
     db.quotes.filter((q) => q.lotId === req.params.id),
   ),
 );
+app.post("/api/lots/:id/respond", auth(["RECYCLER","ADMIN"]), (req:any,res) => {
+  const lot:any=db.lots.find((x:any)=>x.lotId===req.params.id||x.id===req.params.id);
+  if(!lot)return fail(res,404,"LOT_NOT_FOUND","Lot not found");
+  const parsed=z.object({action:z.enum(["ACCEPT","REJECT","COUNTER"]),quotedPrice:z.coerce.number().positive().optional(),pickupAvailable:z.boolean().default(false),notes:z.string().max(300).optional(),rejectionReason:z.string().optional()}).safeParse(req.body);
+  if(!parsed.success)return fail(res,400,"VALIDATION_ERROR",parsed.error.issues[0].message);
+  if(parsed.data.action!=="REJECT"&&!parsed.data.quotedPrice)return fail(res,400,"PRICE_REQUIRED","A rate is required");
+  if(parsed.data.action==="REJECT"&&!parsed.data.rejectionReason)return fail(res,400,"REASON_REQUIRED","Select a rejection reason");
+  const q:any={id:crypto.randomUUID(),lotId:lot.lotId,recyclerId:req.user.recyclerId||"r1",offerPrice:parsed.data.quotedPrice,pickupAvailable:parsed.data.pickupAvailable,notes:parsed.data.notes,rejectionReason:parsed.data.rejectionReason,status:parsed.data.action==="REJECT"?"REJECTED":parsed.data.action==="ACCEPT"?"ACCEPTED":"COUNTERED",createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+48*3600000).toISOString()};
+  db.quotes.push(q);lot.status=parsed.data.action==="ACCEPT"?"ACCEPTED":"REQUESTED";if(parsed.data.action==="ACCEPT"){lot.recyclerId=q.recyclerId;lot.quotedPrice=q.offerPrice;}
+  notify(lot.collectorId,"Recycler response",`${lot.lotId}: ${q.status}`,"QUOTE",`/collector/lots/${lot.lotId}`);audit(req.user.id,req.user.role,`LOT_${q.status}`,"Lot",lot.lotId,q);return ok(res,q,201);
+});
 app.post(
   "/api/quotes/:id/accept",
   auth(["COLLECTOR", "ADMIN"]),
@@ -443,16 +497,23 @@ app.post("/api/handover", auth(), (req: any, res) => {
     collectorId: lot.collectorId,
     recyclerId: lot.recyclerId,
     weightAtHandover: Number(req.body.weightAtHandover),
+    verifiedCondition: req.body.verifiedCondition || lot.condition,
+    finalPrice: Number(req.body.finalPrice || ((lot.quotedPrice || estimatePrice(lot.materialCategory).average) * Number(req.body.weightAtHandover))),
+    photograph: req.body.photograph || lot.photoUrl,
+    location: req.body.location || lot.location,
+    scheduledAt: req.body.scheduledAt || null,
+    method: req.body.method || lot.preferredHandover || "PICKUP",
     otpVerified: true,
     collectorConfirmation: true,
     recyclerConfirmation: true,
-    status: "CONFIRMED",
+    status: "VERIFIED",
     timestamp: new Date().toISOString(),
     discrepancy: d,
   };
   db.handovers.push(h);
-  lot.status = "HANDED_OVER";
+  lot.status = "VERIFIED";
   lot.finalWeight = h.weightAtHandover;
+  lot.finalPrice = h.finalPrice;
   if (d.flagged)
     db.anomalies.unshift({
       id: crypto.randomUUID(),
@@ -502,12 +563,12 @@ app.post("/api/payments", auth(["RECYCLER", "ADMIN"]), (req: any, res) => {
     lotId: lot.lotId,
     amount: Number(req.body.amount),
     method: req.body.method,
-    status: "PAID",
+    status: req.body.status || "PAID",
     transactionReference: req.body.transactionReference,
     paidAt: new Date().toISOString(),
   };
   db.payments.unshift(p);
-  lot.status = "PAID";
+  if(p.status === "PAID") lot.status = "COMPLETED";
   lot.finalSaleValue = p.amount;
   notify(
     lot.collectorId,
@@ -520,6 +581,12 @@ app.post("/api/payments", auth(["RECYCLER", "ADMIN"]), (req: any, res) => {
   ok(res, p, 201);
 });
 app.get("/api/payments", auth(), (_, res) => ok(res, db.payments));
+app.get("/api/receipts/:lotId", auth(), (req:any,res) => {
+  const lot:any=db.lots.find((x:any)=>x.lotId===req.params.lotId);
+  if(!lot)return fail(res,404,"LOT_NOT_FOUND","Lot not found");
+  const handover:any=db.handovers.find((x:any)=>x.lotId===lot.lotId);const payment:any=db.payments.find((x:any)=>x.lotId===lot.lotId);const recycler:any=db.recyclers.find((x:any)=>x.id===lot.recyclerId);
+  return ok(res,{receiptId:`RCP-${lot.lotId}`,lotId:lot.lotId,material:`${lot.materialCategory} — ${lot.materialSubcategory||""}`,collectorId:lot.collectorId,recycler:recycler?.name||"Pending",handoverReference:handover?.handoverId,verifiedWeight:handover?.weightAtHandover,finalPrice:handover?.finalPrice,paymentMethod:payment?.method,paymentStatus:payment?.status,date:payment?.paidAt||handover?.timestamp,prototypeNotice:"Prototype receipt — not a tax invoice"});
+});
 app.post("/api/anomalies/check", (req, res) =>
   ok(res, {
     ...anomaly(
@@ -579,11 +646,11 @@ app.get("/api/traceability/:id", (req, res) => {
     weight: l.finalWeight || l.approxWeight,
     collectionDate: l.createdAt,
     recycler: l.recyclerId ? "Demo Verified Recycler" : "Pending match",
-    handover: ["HANDED_OVER", "RECEIVED", "PAID", "RECYCLED"].includes(
+    handover: ["HANDED_OVER", "VERIFIED", "COMPLETED"].includes(
       l.status,
     ),
-    payment: ["PAID", "RECYCLED"].includes(l.status),
-    recycling: l.status === "RECYCLED",
+    payment: l.status === "COMPLETED",
+    recycling: l.status === "COMPLETED",
     status: l.status,
   });
 });
@@ -592,12 +659,12 @@ app.get("/api/dashboard/:role", auth(), (req: any, res) => {
   ok(res, {
     lots: db.lots.length,
     active: db.lots.filter(
-      (x) => !["PAID", "RECYCLED", "CANCELLED"].includes(x.status),
+      (x) => !["COMPLETED", "CANCELLED"].includes(x.status),
     ).length,
     paid: db.payments.length,
     gmv,
     materialKg: Math.round(db.lots.reduce((s, x) => s + x.approxWeight, 0)),
-    verifiedRecyclers: db.recyclers.filter((x) => x.status === "VERIFIED")
+    verifiedRecyclers: db.recyclers.filter((x) => x.status === "AUTHORIZED")
       .length,
     anomalies: db.anomalies.length,
     monthlyEarnings: 31850,
@@ -788,6 +855,47 @@ app.post("/api/admin/coupons", auth(["ADMIN"]), (req, res) => {
   db.coupons.unshift(c);
   ok(res, c, 201);
 });
+app.post("/api/marketplace/demo-buyers",auth(["CUSTOMER"]),(req:any,res)=>{
+  if(process.env.ENABLE_DEMO === "false")return fail(res,403,"DEMO_DISABLED","Demo data is disabled");
+  const parsed=pin.safeParse(req.body.pincode);
+  if(!parsed.success)return fail(res,400,"VALIDATION_ERROR","Enter a valid six-digit pincode");
+  addDemoBuyers(db.users,parsed.data);
+  audit(req.user.id,req.user.role,"DEMO_BUYERS_ENABLED","Pincode",parsed.data);
+  ok(res,{enabled:true});
+});
+app.post("/api/marketplace/demo-orders",auth(["RECYCLER"]),(req:any,res)=>{
+  if(process.env.ENABLE_DEMO==="false")return fail(res,403,"DEMO_DISABLED","Demo data is disabled");
+  const samples=[{name:"Demo copper cables",category:"Cable",weight:3,price:660},{name:"Demo old laptop",category:"Laptop",weight:2,price:480},{name:"Demo household motor",category:"Motor",weight:4,price:760}];
+  let created=0;
+  samples.forEach((sample,i)=>{
+    const orderId=`DEMO-${req.user.id}-${i+1}`;
+    if(db.orders.some(o=>o.orderId===orderId))return;
+    db.orders.push({id:crypto.randomUUID(),orderId,customerId:"u-customer",selectedRecyclerId:req.user.id,source:"LOCAL_DEMO_ORDER",seededDemoData:true,items:[{name:sample.name,category:sample.category,estimatedWeight:sample.weight,quantity:1,condition:"USED"}],address:"Demo pickup address, Kothrud, Pune",pincode:"411038",latitude:18.5074,longitude:73.8077,selectedOffer:{recyclerId:req.user.id,name:req.user.name,total:sample.price},aiEstimatedValue:sample.price,priceRange:{low:Math.round(sample.price*.85),high:Math.round(sample.price*1.15)},status:"AWAITING_RECYCLER",createdAt:new Date().toISOString()});
+    created++;
+  });
+  if(created)audit(req.user.id,req.user.role,"DEMO_ORDERS_CREATED","User",req.user.id,{created});
+  ok(res,{created});
+});
+const chatAccess=(req:any,res:any,next:any)=>{
+  const order=db.orders.find(o=>o.orderId===req.params.id);
+  if(!order)return fail(res,404,"NOT_FOUND","Order not found");
+  const recyclerId=order.recyclerId||order.selectedRecyclerId;
+  if(!(req.user.role==="CUSTOMER"&&order.customerId===req.user.id)&&!(req.user.role==="RECYCLER"&&recyclerId===req.user.id))return fail(res,403,"FORBIDDEN","Only the customer and selected recycler can access this chat");
+  req.order=order;req.chatRecyclerId=recyclerId;next();
+};
+app.get("/api/marketplace/orders/:id/messages",auth(["CUSTOMER","RECYCLER"]),chatAccess,(req:any,res)=>ok(res,req.order.messages||[]));
+app.post("/api/marketplace/orders/:id/messages",auth(["CUSTOMER","RECYCLER"]),chatAccess,(req:any,res)=>{
+  const parsed=z.object({text:z.string().trim().min(1).max(1000),clientId:z.string().uuid()}).safeParse(req.body);
+  if(!parsed.success)return fail(res,400,"VALIDATION_ERROR","Message must contain 1–1000 characters and a valid request ID");
+  const messages=req.order.messages??=[];
+  const existing=messages.find((m:any)=>m.clientId===parsed.data.clientId&&m.senderId===req.user.id);
+  if(existing)return ok(res,existing);
+  const message={id:crypto.randomUUID(),...parsed.data,senderId:req.user.id,senderName:db.users.find(u=>u.id===req.user.id)?.name,createdAt:new Date().toISOString()};
+  messages.push(message);
+  notify(req.user.role==="CUSTOMER"?req.chatRecyclerId:req.order.customerId,"New order message",`New message for ${req.order.orderId}`,"ORDER",req.user.role==="CUSTOMER"?"/recycler/orders":"/customer/orders");
+  audit(req.user.id,req.user.role,"ORDER_MESSAGE_SENT","Order",req.order.orderId);
+  ok(res,message,201);
+});
 app.post("/api/marketplace/orders", auth(["CUSTOMER"]), (req: any, res) => {
   const s = z
     .object({
@@ -804,6 +912,9 @@ app.post("/api/marketplace/orders", auth(["CUSTOMER"]), (req: any, res) => {
         )
         .min(1),
       address: z.string().min(5),
+      pincode: pin,
+      selectedRecyclerId: z.string().min(1),
+      expectedTotal: z.number().positive(),
       latitude: z.number().optional(),
       longitude: z.number().optional(),
       couponCode: z.string().optional(),
@@ -811,6 +922,9 @@ app.post("/api/marketplace/orders", auth(["CUSTOMER"]), (req: any, res) => {
     .safeParse(req.body);
   if (!s.success)
     return fail(res, 400, "VALIDATION_ERROR", s.error.issues[0].message);
+  const chosen=localOffers(db.users,s.data.pincode,s.data.items).find(o=>o.recyclerId===s.data.selectedRecyclerId);
+  if(!chosen)return fail(res,409,"OFFER_UNAVAILABLE","This recycler no longer serves your pincode or all selected materials. Compare again.");
+  if(chosen.total!==s.data.expectedTotal)return fail(res,409,"RATE_CHANGED","The recycler updated their rates. Compare again before placing your order.");
   const gross = s.data.items.reduce(
     (sum, i) =>
       sum +
@@ -840,6 +954,9 @@ app.post("/api/marketplace/orders", auth(["CUSTOMER"]), (req: any, res) => {
     customerId: req.user.id,
     items: s.data.items,
     address: s.data.address,
+    pincode:s.data.pincode,
+    selectedRecyclerId:chosen.recyclerId,
+    selectedOffer:chosen,
     latitude:
       s.data.latitude ??
       (s.data.address.toLowerCase().includes("kothrud") ? 18.5074 : 18.5204),
@@ -859,7 +976,7 @@ app.post("/api/marketplace/orders", auth(["CUSTOMER"]), (req: any, res) => {
   };
   db.orders.unshift(order);
   db.users
-    .filter((u: any) => u.role === "RECYCLER" && u.status === "APPROVED")
+    .filter((u: any) => u.id===chosen.recyclerId && u.role === "RECYCLER" && u.status === "APPROVED")
     .forEach((u: any) =>
       notify(
         u.id,
@@ -894,7 +1011,7 @@ app.get("/api/marketplace/orders", auth(), (req: any, res) => {
       db.orders
         .filter(
           (o) =>
-            o.status === "AWAITING_RECYCLER" || o.recyclerId === req.user.id,
+            (o.status === "AWAITING_RECYCLER" && (!o.selectedRecyclerId || o.selectedRecyclerId===req.user.id)) || o.recyclerId === req.user.id,
         )
         .map((o) => ({
           ...o,
@@ -912,6 +1029,7 @@ app.get("/api/marketplace/orders", auth(), (req: any, res) => {
         .filter((o) => o.collectorId === req.user.id)
         .map((o) => ({
           ...o,
+          customerName: db.users.find((u:any)=>u.id===o.customerId)?.name || "Customer",
           customerId: undefined,
           recyclerName: db.users.find((u: any) => u.id === o.recyclerId)?.name,
         })),
@@ -935,9 +1053,10 @@ app.post(
         "ORDER_UNAVAILABLE",
         "Another recycler already accepted this order",
       );
+    if(order.selectedRecyclerId && order.selectedRecyclerId!==req.user.id)return fail(res,403,"FORBIDDEN","This order is assigned to another recycler");
     const amount = Math.max(
       1,
-      Number(req.body.amount || order.aiEstimatedValue),
+      Number(order.selectedOffer?.total || req.body.amount || order.aiEstimatedValue),
     );
     const collector: any = db.users.find(
       (u: any) => u.role === "COLLECTOR" && u.status === "APPROVED",

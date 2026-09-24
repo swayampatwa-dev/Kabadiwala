@@ -1,10 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./dashboard.css";
 import "./workflow.css";
 import "./recycler-alert.css";
 import "./route-card.css";
 import "./login-tabs.css";
 import "./live-tracking.css";
+import "./sell-form.css";
+import LocationSettings from "./LocationSettings";
+import {demoEnabled} from "./demo-config";
+import OrderChat, {DemoBuyers} from "./OrderChat";
 import {
   NavLink,
   Navigate,
@@ -186,9 +190,7 @@ function OtpLogin({
       <div className="otp-orb one" />
       <div className="otp-orb two" />
       <div className="portal-switch">
-        <a className={role === "CUSTOMER" ? "active" : ""} href="/user-login">
-          USER
-        </a>
+        <a className={role === "CUSTOMER" ? "active" : ""} href="/user-login">USER</a>
         <a
           className={role === "COLLECTOR" ? "active" : ""}
           href="/partner-login"
@@ -205,29 +207,13 @@ function OtpLogin({
       <main className="otp-card">
         <BrandMark dark />
         <span className="portal-kicker">
-          {role === "RECYCLER"
-            ? "RECYCLER PARTNER"
-            : partner
-              ? "COLLECTION PARTNER"
-              : "HOUSEHOLD USER"}
+          {role === "CUSTOMER" ? "HOUSEHOLD USER" : role === "RECYCLER" ? "AUTHORIZED RECYCLER" : "E-WASTE COLLECTOR"}
         </span>
         <h1>
-          {sent
-            ? "Verify your OTP"
-            : partner
-              ? role === "RECYCLER"
-                ? "Recycler access"
-                : "Partner access"
-              : "Sell scrap from home"}
+          {sent ? "Verify your OTP" : role === "CUSTOMER" ? "Sell your unused items" : role === "RECYCLER" ? "Recycler access" : "Collector access"}
         </h1>
         <p>
-          {sent
-            ? `Enter the code for +91 ${phone}`
-            : partner
-              ? role === "RECYCLER"
-                ? "Accept household material orders and receive verified deliveries."
-                : "View assigned pickup requests and grow your collection business."
-              : "Add items, see an AI price range and book a verified collector."}
+          {sent ? `Enter the code for +91 ${phone}` : role === "CUSTOMER" ? "Add your items and photos, book a pickup and track your order." : role === "RECYCLER" ? "Review formal e-waste lots, quote and verify handovers." : "Collect assigned orders and deliver them to the recycler."}
         </p>
         <div className="phone-field">
           <span>{sent ? "OTP" : "+91"}</span>
@@ -272,8 +258,7 @@ function OtpLogin({
           Create account
         </button>
         <p className="secure-note">
-          <ShieldCheck size={15} /> Recycler details stay private. Secure demo
-          OTP access.
+          <ShieldCheck size={15} /> Exact location stays private until a recycler is selected. Prototype OTP only.
         </p>
       </main>
     </div>
@@ -297,13 +282,13 @@ function Login({
       />
     );
   const accounts: any = {
-    CUSTOMER: "user@kabadi.local",
     COLLECTOR: "collector@kabadi.local",
+    AGGREGATOR: "aggregator@kabadi.local",
     RECYCLER: "recycler@kabadi.local",
     ADMIN: "admin@kabadi.local",
   };
   const [identifier, setId] = useState(
-      portal ? accounts[portal] : "user@kabadi.local",
+      portal ? accounts[portal] : "collector@kabadi.local",
     ),
     [password, setPw] = useState("Demo123!"),
     [error, setError] = useState("");
@@ -346,8 +331,8 @@ function Login({
           <h2>Welcome back</h2>
           <p className="muted">Choose a workspace or enter the demo account.</p>
           {[
-            ["CUSTOMER", "Household user", "user@kabadi.local"],
             ["COLLECTOR", "Collector", "collector@kabadi.local"],
+            ["AGGREGATOR", "Aggregator", "aggregator@kabadi.local"],
             ["RECYCLER", "Recycler", "recycler@kabadi.local"],
             ["ADMIN", "Admin", "admin@kabadi.local"],
           ]
@@ -425,8 +410,8 @@ function Signup({ back }: { back: () => void }) {
           Earn fairly.
         </h1>
         <p>
-          Household users can list personal scrap. Collectors and recyclers are
-          activated only after admin verification.
+          Collectors, aggregators and recyclers join the formal e-waste network
+          after local prototype approval.
         </p>
       </section>
       <section className="login-box">
@@ -456,10 +441,9 @@ function Signup({ back }: { back: () => void }) {
                 value={form.role}
                 onChange={(e) => setForm({ ...form, role: e.target.value })}
               >
-                <option value="CUSTOMER">
-                  Household user selling personal items
-                </option>
                 <option value="COLLECTOR">Scrap collector</option>
+                <option value="CUSTOMER">Household user</option>
+                <option value="AGGREGATOR">Material aggregator</option>
                 <option value="RECYCLER">Recycler</option>
               </select>
             </div>
@@ -481,23 +465,23 @@ function Signup({ back }: { back: () => void }) {
   );
 }
 const menus: any = {
-  CUSTOMER: [
-    [Home, "Home", "/customer/dashboard"],
-    [Camera, "Sell", "/customer/sell"],
-    [Box, "My orders", "/customer/orders"],
-  ],
+  CUSTOMER: [[Home,"Home","/customer/dashboard"],[Camera,"Sell items","/customer/sell"],[Box,"My orders","/customer/orders"],[MapPin,"My address","/customer/address"]],
   COLLECTOR: [
     [Home, "Home", "/collector/dashboard"],
-    [Box, "Lots", "/collector/lots"],
-    [IndianRupee, "Prices", "/collector/prices"],
-    [Recycle, "Recyclers", "/collector/recyclers"],
+    [Truck, "Pickup requests", "/collector/orders"],
     [ShieldCheck, "Safety", "/collector/safety"],
     [ReceiptIndianRupee, "Earnings", "/collector/earnings"],
-    [Truck, "Household pickups", "/collector/orders"],
+  ],
+  AGGREGATOR: [
+    [Home, "Home", "/collector/dashboard"],
+    [Box, "Lots", "/collector/lots"],
+    [Recycle, "Recyclers", "/collector/recyclers"],
+    [ReceiptIndianRupee, "Earnings", "/collector/earnings"],
   ],
   RECYCLER: [
+    [MapPin,"Service area & rates","/recycler/settings"],
+    [Truck,"User orders","/recycler/orders"],
     [LayoutDashboard, "Dashboard", "/recycler/dashboard"],
-    [Truck, "User orders", "/recycler/orders"],
     [Box, "Incoming lots", "/recycler/lots"],
     [PackageCheck, "Operations", "/recycler/operations"],
     [BarChart3, "Analytics", "/recycler/analytics"],
@@ -507,11 +491,10 @@ const menus: any = {
     [Users, "Recyclers", "/admin/recyclers"],
     [AlertTriangle, "Anomalies", "/admin/anomalies"],
     [Database, "Datasets", "/admin/datasets"],
-    [CircleDollarSign, "Business", "/admin/business"],
     [FileCheck2, "Audit log", "/admin/audit"],
     [Users, "Approvals", "/admin/approvals"],
-    [Box, "User orders", "/admin/orders"],
   ],
+  DATA_OPERATOR: [[Database, "Datasets", "/admin/datasets"]],
 };
 function NotificationCenter({ user }: { user: User }) {
   const [open, setOpen] = useState(false);
@@ -623,6 +606,10 @@ function Layout({ user, onLogout }: { user: User; onLogout: () => void }) {
       return () => clearTimeout(x);
     }
   }, [toast]);
+  useEffect(()=>{
+    const autoSync=async()=>{if(isDemoOffline()||!navigator.onLine)return;try{const n=await syncNow();if(n)setToast(`${n} saved lot${n===1?"":"s"} synchronized automatically`)}catch{setToast("Sync will retry when the connection returns")}};
+    window.addEventListener("online",autoSync);autoSync();return()=>window.removeEventListener("online",autoSync);
+  },[]);
   return (
     <div className={`app role-${user.role.toLowerCase()}`}>
       <header className="topbar">
@@ -721,41 +708,32 @@ function RoutesContent({
 }) {
   return (
     <Routes>
+      <Route path="/customer/address" element={<LocationSettings/>}/>
+      <Route path="/recycler/settings" element={<LocationSettings recycler/>}/>
       <Route path="/customer/dashboard" element={<CustomerHome />} />
       <Route path="/customer/sell" element={<CustomerSell toast={toast} />} />
-      <Route
-        path="/customer/orders"
-        element={<CustomerOrders toast={toast} />}
-      />
-      <Route
-        path="/collector/orders"
-        element={<CollectorOrders toast={toast} />}
-      />
+      <Route path="/customer/orders" element={<CustomerOrders toast={toast} />} />
+      <Route path="/recycler/orders" element={<RecyclerOrders toast={toast} />} />
       <Route
         path="/admin/approvals"
         element={<AdminApprovals toast={toast} />}
       />
-      <Route path="/admin/orders" element={<AdminOrders />} />
       <Route
         path="/collector/dashboard"
-        element={<PartnerHome user={user} />}
+        element={user.role === "COLLECTOR" ? <CollectorOrders toast={toast} /> : <CollectorDashboard user={user} />}
       />
       <Route path="/collector/scan" element={<Scan toast={toast} />} />
-      <Route path="/collector/prices" element={<Prices />} />
-      <Route path="/collector/lots" element={<Lots />} />
+      <Route path="/collector/orders" element={<CollectorOrders toast={toast} />} />
+      <Route path="/collector/lots" element={user.role === "COLLECTOR" ? <Navigate to="/collector/orders" replace /> : <Lots />} />
       <Route
         path="/collector/lots/create"
-        element={<CreateLot toast={toast} />}
+        element={user.role === "COLLECTOR" ? <Navigate to="/collector/orders" replace /> : <CreateLot toast={toast} />}
       />
       <Route path="/collector/lots/:id" element={<LotDetail toast={toast} />} />
       <Route path="/collector/recyclers" element={<Recyclers />} />
       <Route path="/collector/earnings" element={<Earnings />} />
       <Route path="/collector/safety" element={<Safety />} />
       <Route path="/recycler/dashboard" element={<RecyclerDashboard />} />
-      <Route
-        path="/recycler/orders"
-        element={<RecyclerOrders toast={toast} />}
-      />
       <Route path="/recycler/lots" element={<RecyclerLots toast={toast} />} />
       <Route
         path="/recycler/operations"
@@ -772,12 +750,11 @@ function RoutesContent({
       />
       <Route path="/admin/anomalies" element={<Anomalies />} />
       <Route path="/admin/datasets" element={<Datasets />} />
-      <Route path="/admin/business" element={<Business />} />
       <Route path="/admin/audit" element={<Audit />} />
       <Route path="/traceability/:id" element={<Traceability />} />
       <Route
         path="*"
-        element={<Navigate to={`/${user.role.toLowerCase()}/dashboard`} />}
+        element={<Navigate to={user.role==="CUSTOMER"?"/customer/dashboard":user.role==="RECYCLER"?"/recycler/dashboard":user.role==="ADMIN"?"/admin/dashboard":user.role==="DATA_OPERATOR"?"/admin/datasets":"/collector/dashboard"} />}
       />
     </Routes>
   );
@@ -826,17 +803,14 @@ function CollectorDashboard({ user }: { user: User }) {
               <span className="live-pill">
                 <i /> Pune rates live
               </span>
-              <h2>Want to sell scrap?</h2>
+              <h2>Create a formal e-waste lot</h2>
               <p>
                 Take a photo. We will identify the material, estimate its value,
-                and find a nearby verified buyer.
+                and find a nearby demo-authorized recycler.
               </p>
               <div className="hero-actions">
                 <NavLink className="btn primary-big" to="/collector/scan">
                   <Camera size={22} /> Start with a photo
-                </NavLink>
-                <NavLink className="btn soft" to="/collector/lots/create">
-                  <Box size={20} /> Add without a photo
                 </NavLink>
               </div>
             </div>
@@ -844,7 +818,7 @@ function CollectorDashboard({ user }: { user: User }) {
               <div>
                 <b>1</b>
                 <span>Photo</span>
-                <small>Scrap pehchanein</small>
+                <small>Identify material</small>
               </div>
               <div>
                 <b>2</b>
@@ -853,8 +827,8 @@ function CollectorDashboard({ user }: { user: User }) {
               </div>
               <div>
                 <b>3</b>
-                <span>Pickup</span>
-                <small>Verified partner</small>
+                <span>Recycler</span>
+                <small>Authorized match</small>
               </div>
             </div>
           </section>
@@ -893,10 +867,6 @@ function CollectorDashboard({ user }: { user: User }) {
             <NavLink to="/collector/scan">
               <Camera />
               {t("scan")}
-            </NavLink>
-            <NavLink to="/collector/prices">
-              <IndianRupee />
-              {t("prices")}
             </NavLink>
             <NavLink to="/collector/recyclers">
               <Recycle />
@@ -942,15 +912,15 @@ function CollectorDashboard({ user }: { user: User }) {
             <div>
               <MapPinned />
               <span>
-                <b>Smart Pickup Routes</b>
-                <small>Combine nearby pickups to save time and fuel</small>
+                <b>Offline lot capture</b>
+                <small>Save the complete lot and synchronize later</small>
               </span>
             </div>
             <div>
               <Zap />
               <span>
-                <b>Price Alerts</b>
-                <small>Get an alert when your local scrap rate increases</small>
+                <b>Digital receipt</b>
+                <small>Keep handover, final price and payment history</small>
               </span>
             </div>
           </section>
@@ -1101,65 +1071,6 @@ function Scan({ toast }: { toast: (s: string) => void }) {
     </>
   );
 }
-function Prices() {
-  const q = useQuery({
-    queryKey: ["prices"],
-    queryFn: () => api<any[]>("/prices"),
-  });
-  const [search, setSearch] = useState("");
-  return (
-    <>
-      <Head
-        eyebrow="Transparent market intelligence"
-        title="Fair price board"
-      />
-      <div className="field" style={{ maxWidth: 460, marginBottom: 18 }}>
-        <input
-          placeholder="Search PCB, cable, battery…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      </div>
-      {q.isLoading ? (
-        <Spinner />
-      ) : q.error ? (
-        <ErrorBox error={q.error} />
-      ) : (
-        <div className="grid">
-          {q.data
-            .filter((x) => x.name.toLowerCase().includes(search.toLowerCase()))
-            .map((x) => (
-              <div className="card metric" key={x.id}>
-                <div className="row">
-                  <b>{x.name}</b>
-                  <span className="badge">↑ {x.pricing.trend}%</span>
-                </div>
-                <h2>
-                  {money(x.pricing.average)}
-                  <small className="muted" style={{ fontSize: 12 }}>
-                    /kg
-                  </small>
-                </h2>
-                <div className="price-scale" />
-                <div className="row">
-                  <small>{money(x.pricing.low)} LOW</small>
-                  <small>{money(x.pricing.high)} HIGH</small>
-                </div>
-                <details style={{ marginTop: 14 }}>
-                  <summary>Why this price?</summary>
-                  <ul>
-                    {x.pricing.reasons.map((r: string) => (
-                      <li key={r}>{r}</li>
-                    ))}
-                  </ul>
-                </details>
-              </div>
-            ))}
-        </div>
-      )}
-    </>
-  );
-}
 function Lots() {
   const navigate = useNavigate();
   const q = useQuery({
@@ -1261,9 +1172,14 @@ function Lots() {
 }
 function CreateLot({ toast }: { toast: (s: string) => void }) {
   const [material, setMaterial] = useState("PCB"),
+    [subcategory, setSubcategory] = useState("High grade board"),
+    [description, setDescription] = useState("Collected electronic material"),
     [weight, setWeight] = useState(2.4),
     [condition, setCondition] = useState("USED"),
-    [location, setLocation] = useState("Pune, Maharashtra"),
+    [sourceType, setSourceType] = useState("HOUSEHOLD_COLLECTION"),
+    [location, setLocation] = useState<any>({label:"Pune, Maharashtra",latitude:18.5204,longitude:73.8567,accuracy:25,capturedAt:new Date().toISOString()}),
+    [photo, setPhoto] = useState(""),
+    [gpsBusy, setGpsBusy] = useState(false),
     [result, setResult] = useState<any>(null);
   const nav = useNavigate();
   const mats = useQuery({
@@ -1276,12 +1192,23 @@ function CreateLot({ toast }: { toast: (s: string) => void }) {
       body: JSON.stringify({ material, weight, condition }),
     }).then(setResult);
   }, [material, weight, condition]);
+  const categories=Array.from(new Set((mats.data||[]).map((m:any)=>m.category||m.name)));
+  const subcategories=(mats.data||[]).filter((m:any)=>(m.category||m.name)===material);
+  const capturePhoto=(file?:File)=>{if(!file)return;const reader=new FileReader();reader.onload=()=>setPhoto(String(reader.result));reader.readAsDataURL(file)};
+  const captureGps=()=>{setGpsBusy(true);navigator.geolocation?.getCurrentPosition((p)=>{setLocation({label:"Captured collection location",latitude:p.coords.latitude,longitude:p.coords.longitude,accuracy:Math.round(p.coords.accuracy),capturedAt:new Date().toISOString()});setGpsBusy(false)},()=>{toast("Location unavailable — using general operating area");setGpsBusy(false)},{enableHighAccuracy:true,timeout:8000})};
   const submit = async () => {
+    if(!photo){toast("Add a material photograph before continuing");return;}
     const payload = {
       materialCategory: material,
+      materialSubcategory: subcategory,
+      description,
+      photoUrl: photo,
       approxWeight: weight,
       condition,
+      sourceType,
       location,
+      capturedAt:new Date().toISOString(),
+      preferredHandover:"PICKUP",
     };
     if (isDemoOffline()) {
       const op = await queue("CREATE_LOT", payload);
@@ -1304,7 +1231,7 @@ function CreateLot({ toast }: { toast: (s: string) => void }) {
   };
   return (
     <>
-      <Head eyebrow="7-step guided workflow" title="Create a lot" />
+      <Head eyebrow="Photo to formal recycling" title="Create material lot" />
       <div className="steps">
         {Array.from({ length: 7 }, (_, i) => (
           <i className="step done" key={i} />
@@ -1316,25 +1243,32 @@ function CreateLot({ toast }: { toast: (s: string) => void }) {
             <div className="field">
               <label>1 · Material</label>
               <div className="material-grid">
-                {mats.data?.map((m) => (
+                {categories.map((name:any) => (
                   <button
-                    className={`material ${material === m.name ? "selected" : ""}`}
-                    onClick={() => setMaterial(m.name)}
-                    key={m.id}
+                    type="button"
+                    className={`material ${material === name ? "selected" : ""}`}
+                    onClick={() => {setMaterial(name);const first=(mats.data||[]).find((m:any)=>(m.category||m.name)===name);setSubcategory(first?.subcategory||name)}}
+                    key={name}
                   >
-                    <b>{m.name}</b>
+                    <b>{name}</b>
                     <br />
-                    <small>{m.hi}</small>
+                    <small>{(mats.data||[]).find((m:any)=>(m.category||m.name)===name)?.hi}</small>
                   </button>
                 ))}
               </div>
             </div>
             <div className="field">
-              <label>2 · Photo (optional offline-safe)</label>
-              <input type="file" accept="image/*" />
+              <label>2 · Subcategory</label>
+              <select value={subcategory} onChange={e=>setSubcategory(e.target.value)}>{subcategories.map((m:any)=><option key={m.id}>{m.subcategory}</option>)}</select>
             </div>
             <div className="field">
-              <label>3 · Approximate weight (kg)</label>
+              <label>3 · Material photograph</label>
+              {photo&&<img src={photo} alt="Material preview" style={{width:"100%",maxHeight:240,objectFit:"cover",borderRadius:18}}/>}
+              <input type="file" accept="image/*" capture="environment" onChange={e=>capturePhoto(e.target.files?.[0])}/>
+              {photo&&<button type="button" className="btn outline" onClick={()=>setPhoto("")}>Retake photo</button>}
+            </div>
+            <div className="field">
+              <label>4 · Approximate weight (kg)</label>
               <input
                 type="number"
                 min="0.1"
@@ -1344,7 +1278,7 @@ function CreateLot({ toast }: { toast: (s: string) => void }) {
               />
             </div>
             <div className="field">
-              <label>4 · Condition</label>
+              <label>5 · Condition</label>
               <select
                 value={condition}
                 onChange={(e) => setCondition(e.target.value)}
@@ -1355,14 +1289,17 @@ function CreateLot({ toast }: { toast: (s: string) => void }) {
               </select>
             </div>
             <div className="field">
-              <label>5 · Collection location</label>
-              <input
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-              />
+              <label>6 · Source and description</label>
+              <select value={sourceType} onChange={e=>setSourceType(e.target.value)}><option value="HOUSEHOLD_COLLECTION">Household collection</option><option value="BUSINESS_COLLECTION">Business collection</option><option value="REPAIR_SHOP">Repair shop</option><option value="BULK_AGGREGATION">Bulk aggregation</option><option value="OTHER">Other</option></select>
+              <textarea value={description} onChange={e=>setDescription(e.target.value)} rows={3}/>
+            </div>
+            <div className="field">
+              <label>7 · Collection location</label>
+              <div className="success"><MapPin size={16}/> {location.label} · ±{location.accuracy} m</div>
+              <button type="button" className="btn outline" onClick={captureGps} disabled={gpsBusy}>{gpsBusy?"Capturing location…":"Use current GPS"}</button>
             </div>
             <button className="btn" onClick={submit}>
-              7 · Create lot
+              Save lot and find recycler
             </button>
           </div>
         </section>
@@ -2406,6 +2343,8 @@ function Traceability() {
   );
 }
 function CustomerHome() {
+  const pickupLocation=useQuery({queryKey:["home-location"],queryFn:()=>api("/account/location")});
+  const [showAll,setShowAll]=useState(false);
   const nav = useNavigate();
   const user = session.user;
   const [search, setSearch] = useState("");
@@ -2457,8 +2396,8 @@ function CustomerHome() {
         <div>
           <span>GOOD DAY</span>
           <h1>{user?.name?.split(" ")[0] || "Welcome"} 👋</h1>
-          <button onClick={() => nav("/customer/sell")}>
-            <MapPin size={14} /> Pune, Maharashtra <Navigation size={13} />
+          <button onClick={() => nav("/customer/address")}>
+            <MapPin size={14} /> {pickupLocation.data?.pincode || "Set pickup address & pincode"} <Navigation size={13} />
           </button>
         </div>
         <div className="profile-chip">
@@ -2530,16 +2469,24 @@ function CustomerHome() {
           <span>CHOOSE CATEGORY</span>
           <h2>What are you selling?</h2>
         </div>
-        <button onClick={() => nav("/customer/sell")}>View all →</button>
+        <button aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>{showAll ? "Show less ↑" : "View all →"}</button>
       </div>
       <section className="category-tiles">
-        {categories
+        {[...categories.filter(x=>x.name!=="More"),...(showAll ? [
+          {name:"Televisions",icon:Box,material:"LCD",hint:"LCD & displays"},
+          {name:"Circuit boards",icon:LayoutDashboard,material:"PCB",hint:"Electronic boards"},
+          {name:"Motors",icon:Settings,material:"Motor",hint:"Fans & small motors"},
+          {name:"Copper",icon:Zap,material:"Copper",hint:"Copper scrap"},
+          {name:"Aluminium",icon:Box,material:"Aluminium",hint:"Metal parts"},
+          {name:"Plastic casings",icon:Recycle,material:"Mixed plastics",hint:"Electronic housings"},
+          {name:"Other electronics",icon:Smartphone,material:"Other E-Waste",hint:"Mixed electronic items"}
+        ] : [])]
           .filter(
             (x) =>
               !search || x.name.toLowerCase().includes(search.toLowerCase()),
           )
-          .map(({ name, icon: I, hint }) => (
-            <button key={name} onClick={() => nav("/customer/sell")}>
+          .map(({ name, icon: I, hint, material }) => (
+            <button key={name} onClick={() => nav(`/customer/sell?category=${encodeURIComponent(material)}`)}>
               <span>
                 <I size={25} />
               </span>
@@ -2754,18 +2701,46 @@ async function imageData(file: File) {
   }
 }
 function CustomerSell({ toast }: { toast: (s: string) => void }) {
+  const [pincode,setPincode]=useState("");
+  const [offers,setOffers]=useState<any[]|null>(null);
+  const [selected,setSelected]=useState<any>(null);
+  const [comparing,setComparing]=useState(false);
+  const [placing,setPlacing]=useState(false);
+  const [offerError,setOfferError]=useState("");
+  const savedLocation=useQuery({queryKey:["sell-saved-location"],queryFn:()=>api("/account/location")});
   const [items, setItems] = useState<any[]>([]);
   const [item, setItem] = useState({
-    name: "Old mobile phone",
-    category: "Mobile Phone",
+    name: "",
+    category: "",
     quantity: 1,
-    estimatedWeight: 0.4,
-    condition: "USED",
+    estimatedWeight: "",
+    condition: "",
     photo: "",
   });
-  const [address, setAddress] = useState("Pune, Maharashtra");
-  const [couponCode, setCoupon] = useState("");
+  const [address, setAddress] = useState("");
   const [estimate, setEstimate] = useState<any>(null);
+  useEffect(()=>{setOffers(null);setSelected(null);setOfferError("")},[items,pincode]);
+  const comparisonKey=JSON.stringify({pincode,items});
+  const latestComparison=useRef(comparisonKey);latestComparison.current=comparisonKey;
+  const comparisonRequest=useRef(0);
+  const [preferredRecycler,setPreferredRecycler]=useState("");
+  const preferredRecyclerRef=useRef("");
+  useEffect(()=>{if(selected){preferredRecyclerRef.current=selected.recyclerId;setPreferredRecycler(selected.recyclerId)}},[selected]);
+  const compare=async()=>{
+    const key=comparisonKey,request=++comparisonRequest.current;
+    setComparing(true);setOfferError("");setSelected(null);
+    try{
+      if(demoEnabled)await api("/marketplace/demo-buyers",{method:"POST",body:JSON.stringify({pincode})});
+      const result=await api("/marketplace/compare",{method:"POST",body:key});
+      if(latestComparison.current===key&&comparisonRequest.current===request){setOffers(result);setSelected(result.find((offer:any)=>offer.recyclerId===preferredRecyclerRef.current)||null);}
+    }catch(e:any){if(latestComparison.current===key&&comparisonRequest.current===request){setOfferError(e.message);setOffers(null)}}
+    finally{if(comparisonRequest.current===request)setComparing(false)}
+  };
+  useEffect(()=>{
+    if(!items.length||!/^[1-9][0-9]{5}$/.test(pincode))return;
+    const timer=setTimeout(()=>{void compare()},350);
+    return ()=>clearTimeout(timer);
+  },[comparisonKey]);
   const nav = useNavigate();
   const photo = async (f?: File) => {
     if (!f) return;
@@ -2773,19 +2748,23 @@ function CustomerSell({ toast }: { toast: (s: string) => void }) {
     setItem({ ...item, photo: data });
     try {
       const ml = await classifyImage(f);
-      if (ml.suggestedMaterial)
-        setItem((x) => ({ ...x, category: ml.suggestedMaterial! }));
-      toast("AI inspected the photo on this device");
+      toast(ml.suggestedMaterial ? `Suggested material: ${ml.suggestedMaterial}. Select the material to confirm.` : "Photo added. Select the material to continue.");
     } catch {
       toast("Photo added; price AI will use selected category");
     }
   };
   const add = async () => {
+    const weight = Number(item.estimatedWeight);
+    if (!item.name.trim() || !item.category || !item.condition || !Number.isFinite(weight) || weight <= 0) {
+      toast("Enter an item name, select material and condition, and enter a valid weight");
+      return;
+    }
+    try {
     const p = await api<any>("/prices/estimate", {
       method: "POST",
       body: JSON.stringify({
         material: item.category,
-        weight: item.estimatedWeight,
+        weight,
         condition: item.condition,
       }),
     });
@@ -2794,22 +2773,27 @@ function CustomerSell({ toast }: { toast: (s: string) => void }) {
       ...items,
       {
         ...item,
-        aiFairValue: Math.round(p.recommendedFairPrice * item.estimatedWeight),
+        estimatedWeight: weight,
+        aiFairValue: Math.round(p.recommendedFairPrice * weight),
       },
     ]);
     toast("Item added to pickup cart");
+    } catch(error:any) {toast(error.message || "Unable to add item. Please try again.");}
   };
   const place = () => {
+    if(!selected||placing)return;
+    setPlacing(true);
     const send = (coords: any = {}) =>
       api<any>("/marketplace/orders", {
         method: "POST",
-        body: JSON.stringify({ items, address, couponCode, ...coords }),
+        body: JSON.stringify({ items, address, pincode, selectedRecyclerId:selected.recyclerId,expectedTotal:selected.total,...coords }),
       })
         .then((o) => {
           toast(`Order ${o.orderId} placed — waiting for a recycler`);
           nav("/customer/orders");
         })
-        .catch((e) => toast(e.message));
+        .catch((e) => {toast(e.message);setSelected(null);setOffers(null);})
+        .finally(()=>setPlacing(false));
     send();
   };
   return (
@@ -2825,12 +2809,15 @@ function CustomerSell({ toast }: { toast: (s: string) => void }) {
           ← Back
         </button>
       </Head>
-      <div className="grid">
-        <section className="card panel7 panel8">
+      <div className="sell-workspace">
+        <section className="card sell-details">
+          <div className="sell-section-heading"><span>01</span><div><h2>Item details</h2><p>Add one item at a time to your pickup.</p></div></div>
           <div className="form">
             <div className="field">
               <label>Item name</label>
               <input
+                placeholder="Enter item name"
+                autoComplete="off"
                 value={item.name}
                 onChange={(e) => setItem({ ...item, name: e.target.value })}
               />
@@ -2841,6 +2828,7 @@ function CustomerSell({ toast }: { toast: (s: string) => void }) {
                 value={item.category}
                 onChange={(e) => setItem({ ...item, category: e.target.value })}
               >
+                <option value="" disabled>Select material</option>
                 {[
                   "Mobile Phone",
                   "Laptop",
@@ -2850,21 +2838,27 @@ function CustomerSell({ toast }: { toast: (s: string) => void }) {
                   "Copper",
                   "Aluminium",
                   "PCB",
+                  "LCD",
+                  "CRT",
+                  "Motor",
+                  "Mixed plastics",
                   "Other E-Waste",
                 ].map((x) => (
                   <option key={x}>{x}</option>
                 ))}
               </select>
             </div>
-            <div className="row">
+            <div className="sell-field-pair">
               <div className="field">
                 <label>Approx. weight kg</label>
                 <input
                   type="number"
                   step=".1"
+                  min="0.1"
+                  placeholder="Enter weight in kg"
                   value={item.estimatedWeight}
                   onChange={(e) =>
-                    setItem({ ...item, estimatedWeight: +e.target.value })
+                    setItem({ ...item, estimatedWeight: e.target.value })
                   }
                 />
               </div>
@@ -2876,6 +2870,7 @@ function CustomerSell({ toast }: { toast: (s: string) => void }) {
                     setItem({ ...item, condition: e.target.value })
                   }
                 >
+                  <option value="" disabled>Select condition</option>
                   <option>GOOD</option>
                   <option>USED</option>
                   <option>POOR</option>
@@ -2910,8 +2905,9 @@ function CustomerSell({ toast }: { toast: (s: string) => void }) {
             )}
           </div>
         </section>
-        <aside className="card panel4">
-          <h2>Pickup cart ({items.length})</h2>
+        <aside className="card sell-summary">
+          <div className="sell-section-heading"><span>02</span><div><h2>Pickup summary</h2><p>{items.length} item(s) ready for collection</p></div></div>
+          {!items.length && <div className="sell-empty"><Box size={28}/><p>Your pickup list is empty.</p><small>Add your first item using the form.</small></div>}
           {items.map((x, i) => (
             <div className="cart-item" key={i}>
               {x.photo && <img src={x.photo} alt="" />}
@@ -2929,20 +2925,20 @@ function CustomerSell({ toast }: { toast: (s: string) => void }) {
           ))}
           <div className="field">
             <label>Pickup address</label>
+            {savedLocation.data?.pincode&&<button className="btn secondary" onClick={()=>{setAddress(savedLocation.data.address);setPincode(savedLocation.data.pincode)}}>Use saved address</button>}
             <textarea
+              placeholder="Enter complete pickup address"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
             />
           </div>
-          <div className="field">
-            <label>Coupon code</label>
-            <input
-              value={couponCode}
-              onChange={(e) => setCoupon(e.target.value.toUpperCase())}
-            />
-          </div>
-          <button className="btn full" disabled={!items.length} onClick={place}>
-            Place pickup order
+          <div className="field"><label htmlFor="pickup-pin">Pickup pincode</label><input id="pickup-pin" placeholder="Enter six-digit pincode" inputMode="numeric" maxLength={6} value={pincode} disabled={comparing||placing} onChange={e=>setPincode(e.target.value.replace(/\D/g,""))}/></div>
+          <button className="btn secondary full" disabled={!items.length||! /^[1-9][0-9]{5}$/.test(pincode)||comparing||placing} onClick={compare}>{comparing?"Finding local offers…":"Compare recycler prices"}</button>
+          {!offers?.length&&<DemoBuyers selectedId={preferredRecycler} onSelect={id=>{preferredRecyclerRef.current=id;setPreferredRecycler(id)}}/>}
+          {offerError&&<p role="alert" className="notice">{offerError}</p>}
+          {offers&&<div className="local-offers"><h3>Offers in {pincode}</h3><p className="muted">Ranked by highest total for all your items. Final payout depends on verified weight and condition.</p>{!offers.length?<p className="notice">No approved recycler currently has rates for all these items in this pincode. Try a different pickup pincode or update your item list.</p>:offers.map((offer,i)=><button className={`local-offer ${selected?.recyclerId===offer.recyclerId?"selected":""}`} key={offer.recyclerId} onClick={()=>setSelected(offer)} disabled={placing} aria-pressed={selected?.recyclerId===offer.recyclerId}><span>{i===0&&<small className="badge">Best listed price</small>}<b>{offer.name}</b>{offer.lines.map((l:any,n:number)=><small key={n}>{l.category} · {l.weight} kg × {money(l.rate)}/kg</small>)}</span><strong>{money(offer.total)}</strong></button>)}</div>}
+          <button className="btn full" disabled={!selected||!items.length || address.trim().length<5||placing} onClick={place}>
+            {placing?"Placing order…":selected?`Send pickup request · ${money(selected.total)}`:"Select a recycler to continue"}
           </button>
           <p className="muted">
             Your order is placed instantly. A recycler accepts the material,
@@ -2988,6 +2984,7 @@ function CustomerOrders({ toast }: { toast: (s: string) => void }) {
           <article className="card panel6" key={o.id}>
             <Status s={o.status} />
             <h2>{o.orderId}</h2>
+            {(o.selectedRecyclerId||o.recyclerId)&&<OrderChat orderId={o.orderId}/>}
             <p>{o.items.map((x: any) => x.name).join(" · ")}</p>
             <div className="success">
               <b>AI fair value</b>
@@ -3076,6 +3073,8 @@ function CustomerOrders({ toast }: { toast: (s: string) => void }) {
 }
 function CollectorOrders({ toast }: { toast: (s: string) => void }) {
   const qc = useQueryClient();
+  const [filter,setFilter] = useState("REQUESTS");
+  const [busy,setBusy] = useState<string|null>(null);
   const q = useQuery({
     queryKey: ["market-orders"],
     queryFn: () => api<any[]>("/marketplace/orders"),
@@ -3101,11 +3100,17 @@ function CollectorOrders({ toast }: { toast: (s: string) => void }) {
     };
   };
   const start = async (id: string) => {
+    setBusy(id);
+    try {
     await api(`/marketplace/orders/${id}/start-trip`, { method: "POST" });
     toast("Journey started — user can see you are coming");
     qc.invalidateQueries({ queryKey: ["market-orders"] });
+    setFilter("ACTIVE");
+    } catch(error:any) { toast(error.message); } finally { setBusy(null); }
   };
   const move = async (id: string, action: "pickup" | "deliver") => {
+    setBusy(id);
+    try {
     await api(`/marketplace/orders/${id}/${action}`, { method: "POST" });
     toast(
       action === "pickup"
@@ -3113,12 +3118,22 @@ function CollectorOrders({ toast }: { toast: (s: string) => void }) {
         : "Delivered to recycler successfully",
     );
     qc.invalidateQueries({ queryKey: ["market-orders"] });
+    if(action === "deliver") setFilter("COMPLETED");
+    } catch(error:any) { toast(error.message); } finally { setBusy(null); }
   };
+  const stages:Record<string,string[]>={REQUESTS:["COLLECTOR_ASSIGNED"],ACTIVE:["COLLECTOR_EN_ROUTE","PICKED_UP"],COMPLETED:["DELIVERED_TO_RECYCLER","COMPLETED"]};
+  const orders=q.data||[];
+  const visible=orders.filter(o=>stages[filter].includes(o.status));
   return (
     <>
-      <Head eyebrow="Your assigned work only" title="Pickup & delivery" />
+      <Head eyebrow="Collection partner" title="Pickup & delivery" />
+      <p className="muted">Collect the user's items and deliver them to the assigned recycler.</p>
+      <div className="row" role="tablist" aria-label="Pickup stages" style={{justifyContent:"flex-start",flexWrap:"wrap",marginBottom:24}}>
+        {[["REQUESTS","Pickup requests"],["ACTIVE","Active pickups"],["COMPLETED","Completed deliveries"]].map(([key,label])=><button key={key} role="tab" aria-selected={filter===key} className={`btn ${filter===key?"":"secondary"}`} onClick={()=>setFilter(key)}>{label} · {orders.filter(o=>stages[key].includes(o.status)).length}</button>)}
+      </div>
+      {q.isLoading ? <Spinner/> : q.error ? <ErrorBox error={q.error}/> : !visible.length ? <div className="card"><Truck size={32}/><h3>{filter==="REQUESTS"?"No pickup requests yet":filter==="ACTIVE"?"No active pickups":"No completed deliveries yet"}</h3><p className="muted">{filter==="REQUESTS"?"Orders appear here after a recycler accepts and assigns them to you.":filter==="ACTIVE"?"Start a pickup request to track collection and delivery here.":"Delivered orders will appear here."}</p></div> : null}
       <div className="grid">
-        {q.data?.map((o) => {
+        {visible.map((o) => {
           const route = routeInfo(o);
           return (
             <article
@@ -3127,6 +3142,7 @@ function CollectorOrders({ toast }: { toast: (s: string) => void }) {
             >
               <Status s={o.status} />
               <h2>{o.orderId}</h2>
+              <p><UserRound size={16}/> {o.customerName || "Customer"}</p>
               <p>
                 {o.items
                   .map((x: any) => `${x.name} · ${x.estimatedWeight} kg`)
@@ -3171,15 +3187,13 @@ function CollectorOrders({ toast }: { toast: (s: string) => void }) {
                   </div>
                 </div>
               )}
-              <div className="success">
-                AI guidance {money(o.priceRange.low)}–{money(o.priceRange.high)}
-              </div>
               <p>
                 <Recycle size={15} /> Deliver to: <b>{o.recyclerName}</b>
               </p>
               {o.status === "COLLECTOR_ASSIGNED" && (
                 <button
                   className="btn secondary full"
+                  disabled={busy===o.orderId}
                   onClick={() => start(o.orderId)}
                 >
                   <Navigation size={18} /> Start journey to customer
@@ -3188,6 +3202,7 @@ function CollectorOrders({ toast }: { toast: (s: string) => void }) {
               {o.status === "COLLECTOR_EN_ROUTE" && (
                 <button
                   className="btn full"
+                  disabled={busy===o.orderId}
                   onClick={() => move(o.orderId, "pickup")}
                 >
                   <PackageCheck size={18} /> Confirm picked up
@@ -3196,6 +3211,7 @@ function CollectorOrders({ toast }: { toast: (s: string) => void }) {
               {o.status === "PICKED_UP" && (
                 <button
                   className="btn full"
+                  disabled={busy===o.orderId}
                   onClick={() => move(o.orderId, "deliver")}
                 >
                   <Truck size={18} /> Confirm delivered to recycler
@@ -3209,10 +3225,14 @@ function CollectorOrders({ toast }: { toast: (s: string) => void }) {
   );
 }
 function RecyclerOrders({ toast }: { toast: (s: string) => void }) {
+  const {t}=useTranslation("orderChat");
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["recycler-user-orders"],
-    queryFn: () => api<any[]>("/marketplace/orders"),
+    queryFn: async () => {
+      if(demoEnabled)await api("/marketplace/demo-orders",{method:"POST"});
+      return api<any[]>("/marketplace/orders");
+    },
     refetchInterval: 8000,
   });
   const [amount, setAmount] = useState(700);
@@ -3253,9 +3273,12 @@ function RecyclerOrders({ toast }: { toast: (s: string) => void }) {
   return (
     <>
       <Head
-        eyebrow="First verified recycler wins"
+        eyebrow={t("assignedOrders")}
         title="Household material orders"
       />
+      {q.isLoading&&<p role="status">{t("ordersLoading")}</p>}
+      {q.error&&<div className="notice" role="alert">{t("ordersError")} <button className="btn outline" onClick={()=>q.refetch()}>{t("retry")}</button></div>}
+      {q.data?.length===0&&<p className="notice">{t("ordersEmpty")}</p>}
       <div className="grid">
         {q.data?.map((o) => {
           const route = routeInfo(o);
@@ -3265,7 +3288,9 @@ function RecyclerOrders({ toast }: { toast: (s: string) => void }) {
               key={o.id}
             >
               <Status s={o.status} />
+              {o.source==="LOCAL_DEMO_ORDER"&&<p className="badge">{t("sampleOrder")}</p>}
               <h2>{o.orderId}</h2>
+              {(o.selectedRecyclerId||o.recyclerId)&&<OrderChat orderId={o.orderId}/>}
               <p>
                 {o.items
                   .map((x: any) => `${x.name} · ${x.estimatedWeight} kg`)
@@ -3318,7 +3343,8 @@ function RecyclerOrders({ toast }: { toast: (s: string) => void }) {
                     <label>Your total buying value</label>
                     <input
                       type="number"
-                      value={amount}
+                      value={o.selectedOffer?.total??amount}
+                      readOnly={!!o.selectedOffer}
                       onChange={(e) => setAmount(+e.target.value)}
                     />
                   </div>
@@ -3586,10 +3612,8 @@ export default function App() {
       ? "COLLECTOR"
       : path.startsWith("/recycler-login")
         ? "RECYCLER"
-        : path.startsWith("/user-login")
-          ? "CUSTOMER"
-          : undefined;
-  if (!user)
+        : undefined;
+  if (!user || (path === "/user-login" && user.role !== "CUSTOMER"))
     return signup ? (
       <Signup back={() => setSignup(false)} />
     ) : (

@@ -1,0 +1,48 @@
+import {describe,it,expect} from "vitest";
+import request from "supertest";
+import app from "./app.js";
+describe("local demo buyer and private order chat",()=>{
+ it("creates three recycler-specific demo orders only once and lets the recycler accept",async()=>{
+  const login=async(phone:string)=>(await request(app).post("/api/auth/verify-otp").send({phone,otp:"123456"})).body.data.token;
+  const recycler=await login("9876543211"),customer=await login("5555555555");
+  const seed=(token:string)=>request(app).post("/api/marketplace/demo-orders").auth(token,{type:"bearer"});
+  expect((await seed(customer)).status).toBe(403);
+  expect((await seed(recycler)).body.data.created).toBe(3);
+  expect((await seed(recycler)).body.data.created).toBe(0);
+  const list=await request(app).get("/api/marketplace/orders").auth(recycler,{type:"bearer"});
+  const demos=list.body.data.filter((o:any)=>o.source==="LOCAL_DEMO_ORDER");
+  expect(demos).toHaveLength(3);
+  const accepted=await request(app).post(`/api/marketplace/orders/${demos[0].orderId}/recycler-accept`).auth(recycler,{type:"bearer"}).send({amount:1});
+  expect(accepted.status).toBe(200);expect(accepted.body.data.recyclerOffer).toBe(660);
+  expect(accepted.body.data.collectorId).toBeTruthy();
+  expect((await seed(recycler)).body.data.created).toBe(0);
+ });
+ it("compares, places, exchanges messages, deduplicates retries and denies outsiders",async()=>{
+  const login=async(phone:string,otp="123456")=>(await request(app).post("/api/auth/verify-otp").send({phone,otp})).body.data.token;
+  const customer=await login("5555555555");
+  const post=(path:string,token:string,body:any)=>request(app).post(`/api${path}`).auth(token,{type:"bearer"}).send(body);
+  expect((await post("/marketplace/demo-buyers",customer,{pincode:"271502"})).status).toBe(200);
+  await post("/marketplace/demo-buyers",customer,{pincode:"271502"});
+  const items=[{name:"Old motor",category:"Motor",estimatedWeight:2,quantity:1,condition:"USED"}];
+  const offers=(await post("/marketplace/compare",customer,{pincode:"271502",items})).body.data;
+  expect(offers).toHaveLength(3);expect(offers[0].total).toBeGreaterThan(offers[1].total);
+  const selected=offers[0];
+  const order=await post("/marketplace/orders",customer,{items,pincode:"271502",address:"Demo pickup address",selectedRecyclerId:selected.recyclerId,expectedTotal:selected.total});
+  expect(order.status).toBe(201);
+  const path=`/marketplace/orders/${order.body.data.orderId}/messages`;
+  const recycler=await login("9000000003"),outsider=await login("9000000001"),collector=await login("6666666666","654321");
+  const message={text:"When can you collect?",clientId:crypto.randomUUID()};
+  expect((await post(path,customer,message)).status).toBe(201);
+  expect((await post(path,customer,message)).status).toBe(200);
+  expect((await post(path,recycler,{text:"Tomorrow morning.",clientId:crypto.randomUUID()})).status).toBe(201);
+  expect((await post(path,recycler,{text:"  ",clientId:crypto.randomUUID()})).status).toBe(400);
+  const get=(token:string)=>request(app).get(`/api${path}`).auth(token,{type:"bearer"});
+  expect((await get(customer)).body.data).toHaveLength(2);
+  expect((await get(recycler)).body.data[0].text).toBe(message.text);
+  expect((await get(outsider)).status).toBe(403);expect((await get(collector)).status).toBe(403);
+  expect((await post(path,outsider,{text:"Intrusion",clientId:crypto.randomUUID()})).status).toBe(403);
+  expect((await post(`/marketplace/orders/${order.body.data.orderId}/recycler-accept`,recycler,{amount:selected.total})).status).toBe(200);
+  const listed=await request(app).get("/api/marketplace/orders").auth(collector,{type:"bearer"});
+  expect(listed.body.data.find((o:any)=>o.orderId===order.body.data.orderId).messages).toBeUndefined();
+ });
+});

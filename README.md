@@ -1,65 +1,67 @@
-# KABADI+
+# KabadiSetu
 
-**Sahi Daam. Sahi Recycler. Safe Recycling.**
+Offline-tolerant, multilingual e-waste lot and authorized-recycler connection
+prototype for Ministry of Mines/JNARDDC Problem Statement 26229.
 
-KABADI+ is a local-first digital e-waste network connecting informal collectors with responsible recyclers through fair-price intelligence, AI-assisted classification, explainable matching, verified handovers, payment records and public-safe traceability.
+The collector-first journey is:
+
+```text
+Photo -> Material -> Weight -> Local price -> Authorized recycler -> Offer
+-> Verified handover -> Payment record -> Digital receipt -> Earnings
+```
+
+This reconstruction is **local only**. Nothing is pushed or deployed unless a
+future user request explicitly authorizes it.
+
+## Read before development
+
+- [Development contract](./AGENTS.md)
+- [Frozen product scope](./docs/PRODUCT_REQUIREMENTS.md)
+- [Canonical flows](./docs/USER_FLOWS.md)
+- [Architecture decisions](./docs/ARCHITECTURE_DECISIONS.md)
+- [Data model](./docs/DATA_MODEL.md)
+- [Test plan](./docs/TEST_PLAN.md)
+- [Implementation status](./docs/IMPLEMENTATION_STATUS.md)
 
 ## Run locally
 
-Prerequisites: Node.js 20+, npm 10+. MongoDB 7 is optional for the current deterministic prototype adapter and available through Docker.
+Requires Node.js 20+ and npm 10+.
 
 ```bash
 npm install
-docker compose up -d
 npm run seed
 npm run dev
 ```
 
-Open `http://localhost:5173`. API: `http://localhost:4000/api/health`.
+Open `http://localhost:5173`. API health is at `http://localhost:4000/api/health`.
 
-## Demo accounts
+## Local demo identities
 
-| Role | Email | Password |
+| Role | Login | Prototype secret |
 |---|---|---|
-| Household user | user@kabadi.local | Demo123! |
-| Collector | collector@kabadi.local | Demo123! |
-| Recycler | recycler@kabadi.local | Demo123! |
-| Admin | admin@kabadi.local | Demo123! |
+| Collector | `6666666666` | OTP `654321` |
+| Aggregator | `aggregator@kabadi.local` | `Demo123!` |
+| Recycler | `9876543211` | OTP `123456` |
+| Admin | `admin@kabadi.local` | `Demo123!` |
+| Data operator | `data@kabadi.local` | `Demo123!` |
 
-Demo OTP is `123456`. This is visibly marked as prototype authentication.
+All authentication, authorization records, recyclers, prices and payments are
+prototype fixtures. No real SMS, government registry query or payment occurs.
 
-Separate entry URLs: `/user-login`, `/collector-login`, `/recycler-login`, and `/admin/login`. New collector/recycler registrations remain pending until approved in `/admin/approvals`.
+## Quality gates
 
-## Commands
+```bash
+npm run typecheck
+npm test
+npm run build
+```
 
-- `npm run dev` — start web and API
-- `npm run seed` — reset deterministic seed data
-- `npm test` — critical domain and API tests
-- `npm run typecheck` — strict TypeScript checks
-- `npm run build` — production builds
+The suite covers pricing, matching, validation, role boundaries, offline
+idempotency and collector -> recycler -> handover -> payment -> traceability.
 
-## Features
+## Prototype stack
 
-- Household user: multi-item photo cart, private AI price range, coupon, pickup order, anonymous collector offers, accept/reject/rebroadcast, verified-weight revision and final payout confirmation.
-- Collector: approved-only household pickup marketplace, price offers, address reveal after acceptance, scale-weight verification, on-device TensorFlow.js/MobileNet scan, GPS, offline sync and notifications.
-- Recycler: incoming lots, real quotes, capacity-aware nearest-neighbour pickup route optimization, OTP handover, weight discrepancy flags, notification events and local payment recording.
-- Admin: collector/recycler approval, marketplace order oversight, commission/delivery-charge controls, coupon creation, formalization dashboard, anomalies, datasets, audit log and business metrics.
-- Platform: role-checked JWT API, structured errors, validation, rate limiting, idempotent client operations, status machine, PWA shell and CSV-ready structured endpoints.
+React/TypeScript PWA, IndexedDB/Dexie offline queue and Express/TypeScript API.
+The web local database substitutes for the PRD's SQLite mobile layer. See the
+architecture decision record before changing frameworks.
 
-## Environment
-
-Copy `.env.example` to `.env`. Do not use the demo JWT secret in production. Business thresholds are configured by environment variables now; a production admin configuration persistence layer is the next adapter.
-
-## Offline demo
-
-Sign in as collector, use the connectivity button to enable **OFFLINE DEMO MODE**, create a lot, and reload. The draft and queued mutation remain in IndexedDB. Turn online mode back on and click sync; the server processes the unique `clientOperationId` only once.
-
-## AI demo
-
-Photos are compressed locally and TensorFlow.js MobileNet runs on-device. Its visual evidence is mapped into supported e-waste classes; the deterministic API provider remains a fallback. Predictions are advisory and no measured field accuracy is claimed.
-
-## Tests and known limitations
-
-The test suite covers pricing, matching, price anomalies, weight discrepancies, authenticated lot creation, notifications, capacity-aware pickup pooling and traceability. MongoDB is primary when `MONGODB_URI` is configured; PostgreSQL remains a deployment-safe fallback. Real authorization registry verification, object storage, payments, custom field-trained e-waste ML, production OTP, background Web Push and Playwright browser automation remain production upgrades.
-
-See [architecture](./ARCHITECTURE.md), [API](./API.md), [database](./DATABASE.md), [AI](./AI.md), [offline design](./OFFLINE.md), [business model](./BUSINESS_MODEL.md), and [demo script](./DEMO.md).

@@ -34,9 +34,13 @@ describe("complete KABADI+ workflow", () => {
 
     const created = await authorized("post", "/api/lots", collector).send({
       materialCategory: "PCB",
+      materialSubcategory: "High grade board",
+      description: "Recovered PCB lot",
+      photoUrl: "data:image/jpeg;base64,demo",
       approxWeight: 12.5,
       condition: "USED",
-      location: "Pune",
+      sourceType: "HOUSEHOLD_COLLECTION",
+      location: {label:"Pune",latitude:18.52,longitude:73.85,accuracy:20,capturedAt:new Date().toISOString()},
     });
     expect(created.status).toBe(201);
     const lotId = created.body.data.lotId;
@@ -78,7 +82,7 @@ describe("complete KABADI+ workflow", () => {
       material: "PCB",
       handover: true,
       payment: true,
-      status: "PAID",
+      status: "COMPLETED",
     });
     const anomalies = await authorized("get", "/api/anomalies", admin);
     expect(
@@ -129,16 +133,20 @@ describe("complete KABADI+ workflow", () => {
     const lot = (
       await authorized("post", "/api/lots", collector).send({
         materialCategory: "Battery",
+        materialSubcategory: "Lithium-ion",
+        description: "Used battery lot",
+        photoUrl: "data:image/jpeg;base64,demo",
         approxWeight: 2,
         condition: "USED",
-        location: "Pune",
+        sourceType: "REPAIR_SHOP",
+        location: {label:"Pune",latitude:18.52,longitude:73.85,accuracy:20,capturedAt:new Date().toISOString()},
       })
     ).body.data;
     const invalid = await authorized(
       "patch",
       `/api/lots/${lot.lotId}`,
       collector,
-    ).send({ status: "RECYCLED" });
+    ).send({ status: "COMPLETED" });
     expect(invalid.status).toBe(409);
   });
 
@@ -163,64 +171,13 @@ describe("complete KABADI+ workflow", () => {
     ).toBe(true);
   });
 
-  it("runs household order → recycler acceptance → assigned collector pickup → recycler delivery", async () => {
-    const customer = await login("user@kabadi.local");
-    const collector = await login("collector@kabadi.local");
-    const recycler = await login("recycler@kabadi.local");
-    const created = await authorized(
-      "post",
-      "/api/marketplace/orders",
-      customer,
-    ).send({
-      items: [
-        {
-          name: "Old phone",
-          category: "Mobile Phone",
-          quantity: 1,
-          estimatedWeight: 1,
-          condition: "USED",
-        },
-      ],
-      address: "Kothrud, Pune",
-      couponCode: "GREEN50",
-    });
-    expect(created.status).toBe(201);
-    const orderId = created.body.data.orderId;
-    expect(created.body.data.status).toBe("AWAITING_RECYCLER");
-    const accepted = await authorized(
-      "post",
-      `/api/marketplace/orders/${orderId}/recycler-accept`,
-      recycler,
-    ).send({ amount: 800 });
-    expect(accepted.body.data).toMatchObject({
-      status: "COLLECTOR_ASSIGNED",
-      recyclerOffer: 800,
-      collectorId: "u-collector",
-    });
-    const picked = await authorized(
-      "post",
-      `/api/marketplace/orders/${orderId}/pickup`,
-      collector,
-    ).send();
-    expect(picked.body.data.status).toBe("PICKED_UP");
-    const delivered = await authorized(
-      "post",
-      `/api/marketplace/orders/${orderId}/deliver`,
-      collector,
-    ).send();
-    expect(delivered.body.data).toMatchObject({
-      status: "DELIVERED_TO_RECYCLER",
-      finalAmount: 800,
-    });
-    const customerView = await authorized(
-      "get",
-      "/api/marketplace/orders",
-      customer,
-    );
-    expect(customerView.body.data[0]).toMatchObject({
-      recyclerName: "GreenCycle Pune",
-      collectorName: "Ramesh Kumar",
-    });
+  it("provides PRD taxonomy, dated prices and safety content", async () => {
+    const materials = await request(app).get("/api/materials");
+    expect(new Set(materials.body.data.map((x:any)=>x.category))).toEqual(new Set(["CRT","LCD","PCB","Cable","Battery","Motor","Magnet assembly","Mixed plastics"]));
+    const prices = await request(app).get("/api/prices/history?category=PCB");
+    expect(prices.body.data.length).toBeGreaterThanOrEqual(5);
+    expect(prices.body.data[0]).toMatchObject({location:"Pune, Maharashtra",unit:"kg",validationStatus:"DEMO_VALIDATED"});
+    expect((await request(app).get("/api/safety")).body.data.length).toBeGreaterThan(0);
   });
 
   it("requires admin approval for new collectors", async () => {
@@ -262,14 +219,10 @@ describe("complete KABADI+ workflow", () => {
     ).toBe(200);
   });
 
-  it("keeps user and partner OTP portals role-specific", async () => {
-    const userOtp = await request(app)
-      .post("/api/auth/verify-otp")
-      .send({ phone: "5555555555", otp: "123456" });
+  it("keeps collector OTP role-specific", async () => {
     const partnerOtp = await request(app)
       .post("/api/auth/verify-otp")
       .send({ phone: "6666666666", otp: "654321" });
-    expect(userOtp.body.data.user.role).toBe("CUSTOMER");
     expect(partnerOtp.body.data.user.role).toBe("COLLECTOR");
     expect(
       (
